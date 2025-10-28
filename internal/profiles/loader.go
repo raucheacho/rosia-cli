@@ -1,3 +1,16 @@
+// Package profiles provides profile loading and matching functionality.
+//
+// Profiles define technology-specific cleaning rules including patterns to match
+// and detection criteria. The loader reads JSON profile definitions and provides
+// caching for efficient profile matching during scanning.
+//
+// Example usage:
+//
+//	loader := profiles.NewLoader()
+//	if err := loader.LoadAll("profiles/"); err != nil {
+//	    log.Fatal(err)
+//	}
+//	profile, err := loader.MatchProfile("/path/to/project")
 package profiles
 
 import (
@@ -11,7 +24,10 @@ import (
 	"github.com/raucheacho/rosia-cli/pkg/types"
 )
 
-// Loader handles loading and managing profiles
+// Loader handles loading and managing profiles.
+//
+// The Loader reads profile definitions from JSON files, validates them,
+// and provides efficient profile matching with caching support.
 type Loader struct {
 	profiles     []types.Profile
 	profileCache map[string]*types.Profile
@@ -31,13 +47,22 @@ func NewLoader() *Loader {
 // LoadAll reads all JSON profiles from the specified directory
 func (l *Loader) LoadAll(dir string) ([]types.Profile, error) {
 	// Check if directory exists
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return nil, fmt.Errorf("profiles directory does not exist: %s", dir)
+	if _, err := os.Stat(dir); err != nil {
+		if os.IsNotExist(err) {
+			return nil, types.ErrPathNotFound{Path: dir}
+		}
+		if os.IsPermission(err) {
+			return nil, types.ErrPermissionDenied{Path: dir}
+		}
+		return nil, fmt.Errorf("failed to access profiles directory %s: %w", dir, err)
 	}
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read profiles directory: %w", err)
+		if os.IsPermission(err) {
+			return nil, types.ErrPermissionDenied{Path: dir}
+		}
+		return nil, fmt.Errorf("failed to read profiles directory %s: %w", dir, err)
 	}
 
 	profiles := make([]types.Profile, 0)
@@ -78,17 +103,23 @@ func (l *Loader) LoadAll(dir string) ([]types.Profile, error) {
 func (l *Loader) LoadProfile(path string) (*types.Profile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read profile file: %w", err)
+		if os.IsNotExist(err) {
+			return nil, types.ErrPathNotFound{Path: path}
+		}
+		if os.IsPermission(err) {
+			return nil, types.ErrPermissionDenied{Path: path}
+		}
+		return nil, fmt.Errorf("failed to read profile file %s: %w", path, err)
 	}
 
 	var profile types.Profile
 	if err := json.Unmarshal(data, &profile); err != nil {
-		return nil, fmt.Errorf("failed to parse profile JSON: %w", err)
+		return nil, fmt.Errorf("failed to parse profile JSON from %s: %w", path, err)
 	}
 
 	// Validate profile
 	if err := l.validateProfile(&profile); err != nil {
-		return nil, fmt.Errorf("profile validation failed: %w", err)
+		return nil, fmt.Errorf("profile validation failed for %s: %w", path, err)
 	}
 
 	return &profile, nil

@@ -1,0 +1,85 @@
+{
+  "$schema": "https://raw.githubusercontent.com/ScoopInstaller/Scoop/master/schema.json",
+  "version": "0.1.0",
+  "description": "Clean development dependencies and caches across multiple project types",
+  "homepage": "https://github.com/raucheacho/rosia-cli",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/raucheacho/rosia-cli/releases/download/v0.1.0/rosia_0.1.0_windows_amd64.zip",
+      "hash": "REPLACE_WITH_ACTUAL_SHA256",
+      "bin": "rosia.exe"
+    },
+    "32bit": {
+      "url": "https://github.com/raucheacho/rosia-cli/releases/download/v0.1.0/rosia_0.1.0_windows_386.zip",
+      "hash": "REPLACE_WITH_ACTUAL_SHA256",
+      "bin": "rosia.exe"
+    }
+  },
+  "post_install": [
+    "# Create configuration directory",
+    "$configDir = \"$env:USERPROFILE\\.rosia\"",
+    "if (-not (Test-Path $configDir)) {",
+    "    New-Item -ItemType Directory -Path $configDir -Force | Out-Null",
+    "    New-Item -ItemType Directory -Path \"$configDir\\trash\" -Force | Out-Null",
+    "    New-Item -ItemType Directory -Path \"$configDir\\plugins\" -Force | Out-Null",
+    "    New-Item -ItemType Directory -Path \"$configDir\\profiles\" -Force | Out-Null",
+    "}",
+    "",
+    "# Copy default profiles if they exist in the installation",
+    "$profilesSource = \"$dir\\profiles\"",
+    "if (Test-Path $profilesSource) {",
+    "    Copy-Item -Path \"$profilesSource\\*\" -Destination \"$configDir\\profiles\" -Recurse -Force",
+    "}",
+    "",
+    "# Create default config if it doesn't exist",
+    "$configFile = \"$env:USERPROFILE\\.rosiarc.json\"",
+    "if (-not (Test-Path $configFile)) {",
+    "    $defaultConfig = @{",
+    "        trash_retention_days = 3",
+    "        profiles = @('node', 'python', 'rust', 'flutter', 'go')",
+    "        ignore_paths = @()",
+    "        plugins = @()",
+    "        concurrency = 0",
+    "        telemetry_enabled = $false",
+    "    } | ConvertTo-Json -Depth 10",
+    "    Set-Content -Path $configFile -Value $defaultConfig -Encoding UTF8",
+    "}",
+    "",
+    "Write-Host 'Rosia CLI installed successfully!' -ForegroundColor Green",
+    "Write-Host ''",
+    "Write-Host 'Quick start:' -ForegroundColor Blue",
+    "Write-Host '  rosia scan C:\\projects    # Scan for cleanable files'",
+    "Write-Host '  rosia ui C:\\projects      # Launch interactive TUI'",
+    "Write-Host '  rosia clean               # Clean detected targets'",
+    "Write-Host '  rosia stats               # View statistics'",
+    "Write-Host ''",
+    "Write-Host 'Configuration: $env:USERPROFILE\\.rosiarc.json' -ForegroundColor Blue",
+    "Write-Host 'Documentation: https://github.com/raucheacho/rosia-cli' -ForegroundColor Blue"
+  ],
+  "checkver": {
+    "github": "https://github.com/raucheacho/rosia-cli"
+  },
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/raucheacho/rosia-cli/releases/download/v$version/rosia_$version_windows_amd64.zip"
+      },
+      "32bit": {
+        "url": "https://github.com/raucheacho/rosia-cli/releases/download/v$version/rosia_$version_windows_386.zip"
+      }
+    },
+    "hash": {
+      "url": "$baseurl/checksums.txt"
+    }
+  },
+  "notes": [
+    "Rosia CLI has been installed!",
+    "",
+    "Configuration file: %USERPROFILE%\\.rosiarc.json",
+    "Profiles directory: %USERPROFILE%\\.rosia\\profiles",
+    "Trash directory: %USERPROFILE%\\.rosia\\trash",
+    "",
+    "For more information, run: rosia --help"
+  ]
+}

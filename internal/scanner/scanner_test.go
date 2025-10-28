@@ -215,3 +215,510 @@ func TestScanWithIgnorePaths(t *testing.T) {
 		t.Error("Expected to find node_modules in project1")
 	}
 }
+
+func TestScanAsync(t *testing.T) {
+	// Create a temporary directory structure with multiple projects
+	tmpDir := t.TempDir()
+
+	// Create 5 Node.js projects
+	for i := 0; i < 5; i++ {
+		projectDir := filepath.Join(tmpDir, "project"+string(rune('0'+i)))
+		if err := os.MkdirAll(projectDir, 0755); err != nil {
+			t.Fatalf("Failed to create project dir: %v", err)
+		}
+
+		packageJSON := filepath.Join(projectDir, "package.json")
+		if err := os.WriteFile(packageJSON, []byte("{}"), 0644); err != nil {
+			t.Fatalf("Failed to create package.json: %v", err)
+		}
+
+		nodeModules := filepath.Join(projectDir, "node_modules")
+		if err := os.MkdirAll(nodeModules, 0755); err != nil {
+			t.Fatalf("Failed to create node_modules: %v", err)
+		}
+
+		// Create some files in node_modules
+		testFile := filepath.Join(nodeModules, "test.js")
+		if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+	}
+
+	// Load profiles
+	loader := profiles.NewLoader()
+	profilesDir := filepath.Join("..", "..", "profiles")
+	_, err := loader.LoadAll(profilesDir)
+	if err != nil {
+		t.Fatalf("Failed to load profiles: %v", err)
+	}
+
+	// Create scanner
+	scanner := NewScanner(loader)
+
+	// Scan asynchronously
+	ctx := context.Background()
+	opts := ScanOptions{
+		MaxDepth:      10,
+		IncludeHidden: false,
+		IgnorePaths:   []string{},
+		DryRun:        false,
+		Concurrency:   2,
+	}
+
+	targetChan, errorChan := scanner.ScanAsync(ctx, []string{tmpDir}, opts)
+
+	// Collect results
+	var targets []string
+	var errors []error
+
+	done := make(chan bool)
+	go func() {
+		for target := range targetChan {
+			targets = append(targets, target.Path)
+		}
+		done <- true
+	}()
+
+	go func() {
+		for err := range errorChan {
+			errors = append(errors, err)
+		}
+	}()
+
+	<-done
+
+	// Verify results
+	if len(errors) > 0 {
+		t.Errorf("Expected no errors, got %d: %v", len(errors), errors)
+	}
+
+	if len(targets) != 5 {
+		t.Errorf("Expected 5 targets, got %d", len(targets))
+	}
+
+	// Verify all targets are node_modules
+	for _, target := range targets {
+		if filepath.Base(target) != "node_modules" {
+			t.Errorf("Expected node_modules, got %s", filepath.Base(target))
+		}
+	}
+}
+
+func TestScanWithContextCancellation(t *testing.T) {
+	// Create a large directory structure
+	tmpDir := t.TempDir()
+
+	// Create many projects to ensure scan takes some time
+	for i := 0; i < 100; i++ {
+		projectDir := filepath.Join(tmpDir, "project"+string(rune('0'+i%10)), "sub"+string(rune('0'+i/10)))
+		if err := os.MkdirAll(projectDir, 0755); err != nil {
+			t.Fatalf("Failed to create project dir: %v", err)
+		}
+
+		packageJSON := filepath.Join(projectDir, "package.json")
+		if err := os.WriteFile(packageJSON, []byte("{}"), 0644); err != nil {
+			t.Fatalf("Failed to create package.json: %v", err)
+		}
+
+		nodeModules := filepath.Join(projectDir, "node_modules")
+		if err := os.MkdirAll(nodeModules, 0755); err != nil {
+			t.Fatalf("Failed to create node_modules: %v", err)
+		}
+	}
+
+	// Load profiles
+	loader := profiles.NewLoader()
+	profilesDir := filepath.Join("..", "..", "profiles")
+	_, err := loader.LoadAll(profilesDir)
+	if err != nil {
+		t.Fatalf("Failed to load profiles: %v", err)
+	}
+
+	// Create scanner
+	scanner := NewScanner(loader)
+
+	// Create a context that we'll cancel
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Start scan in goroutine
+	opts := ScanOptions{
+		MaxDepth:      10,
+		IncludeHidden: false,
+		IgnorePaths:   []string{},
+		DryRun:        false,
+		Concurrency:   2,
+	}
+
+	done := make(chan error)
+	go func() {
+		_, err := scanner.Scan(ctx, []string{tmpDir}, opts)
+		done <- err
+	}()
+
+	// Cancel context immediately
+	cancel()
+
+	// Wait for scan to complete
+	err = <-done
+
+	// Should get context.Canceled error
+	if err != context.Canceled {
+		t.Errorf("Expected context.Canceled error, got %v", err)
+	}
+}
+
+func TestScanWithHiddenFiles(t *testing.T) {
+	// Create a temporary directory structure
+	tmpDir := t.TempDir()
+
+	// Create a project with hidden directories
+	projectDir := filepath.Join(tmpDir, "project")
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("Failed to create project dir: %v", err)
+	}
+
+	packageJSON := filepath.Join(projectDir, "package.json")
+	if err := os.WriteFile(packageJSON, []byte("{}"), 0644); err != nil {
+		t.Fatalf("Failed to create package.json: %v", err)
+	}
+
+	// Create visible node_modules
+	nodeModules := filepath.Join(projectDir, "node_modules")
+	if err := os.MkdirAll(nodeModules, 0755); err != nil {
+		t.Fatalf("Failed to create node_modules: %v", err)
+	}
+
+	// Create hidden .cache directory
+	cacheDir := filepath.Join(projectDir, ".cache")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatalf("Failed to create .cache: %v", err)
+	}
+
+	// Load profiles
+	loader := profiles.NewLoader()
+	profilesDir := filepath.Join("..", "..", "profiles")
+	_, err := loader.LoadAll(profilesDir)
+	if err != nil {
+		t.Fatalf("Failed to load profiles: %v", err)
+	}
+
+	// Create scanner
+	scanner := NewScanner(loader)
+
+	// Test 1: Scan without hidden files
+	ctx := context.Background()
+	opts := ScanOptions{
+		MaxDepth:      10,
+		IncludeHidden: false,
+		IgnorePaths:   []string{},
+		DryRun:        false,
+		Concurrency:   2,
+	}
+
+	targets, err := scanner.Scan(ctx, []string{tmpDir}, opts)
+	if err != nil {
+		t.Fatalf("Scan failed: %v", err)
+	}
+
+	// Should find node_modules but not .cache
+	foundNodeModules := false
+	foundCache := false
+	for _, target := range targets {
+		if filepath.Base(target.Path) == "node_modules" {
+			foundNodeModules = true
+		}
+		if filepath.Base(target.Path) == ".cache" {
+			foundCache = true
+		}
+	}
+
+	if !foundNodeModules {
+		t.Error("Expected to find node_modules")
+	}
+	if foundCache {
+		t.Error("Should not find .cache when IncludeHidden is false")
+	}
+
+	// Test 2: Scan with hidden files
+	opts.IncludeHidden = true
+	targets, err = scanner.Scan(ctx, []string{tmpDir}, opts)
+	if err != nil {
+		t.Fatalf("Scan failed: %v", err)
+	}
+
+	// Should find both node_modules and .cache
+	foundNodeModules = false
+	foundCache = false
+	for _, target := range targets {
+		if filepath.Base(target.Path) == "node_modules" {
+			foundNodeModules = true
+		}
+		if filepath.Base(target.Path) == ".cache" {
+			foundCache = true
+		}
+	}
+
+	if !foundNodeModules {
+		t.Error("Expected to find node_modules")
+	}
+	if !foundCache {
+		t.Error("Expected to find .cache when IncludeHidden is true")
+	}
+}
+
+func TestScanMultipleProfiles(t *testing.T) {
+	// Create a temporary directory with multiple project types
+	tmpDir := t.TempDir()
+
+	// Create Node.js project
+	nodeProject := filepath.Join(tmpDir, "node-project")
+	if err := os.MkdirAll(nodeProject, 0755); err != nil {
+		t.Fatalf("Failed to create node project: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(nodeProject, "package.json"), []byte("{}"), 0644); err != nil {
+		t.Fatalf("Failed to create package.json: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(nodeProject, "node_modules"), 0755); err != nil {
+		t.Fatalf("Failed to create node_modules: %v", err)
+	}
+
+	// Create Python project
+	pythonProject := filepath.Join(tmpDir, "python-project")
+	if err := os.MkdirAll(pythonProject, 0755); err != nil {
+		t.Fatalf("Failed to create python project: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(pythonProject, "requirements.txt"), []byte(""), 0644); err != nil {
+		t.Fatalf("Failed to create requirements.txt: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(pythonProject, "venv"), 0755); err != nil {
+		t.Fatalf("Failed to create venv: %v", err)
+	}
+
+	// Create Rust project
+	rustProject := filepath.Join(tmpDir, "rust-project")
+	if err := os.MkdirAll(rustProject, 0755); err != nil {
+		t.Fatalf("Failed to create rust project: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(rustProject, "Cargo.toml"), []byte(""), 0644); err != nil {
+		t.Fatalf("Failed to create Cargo.toml: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(rustProject, "target"), 0755); err != nil {
+		t.Fatalf("Failed to create target: %v", err)
+	}
+
+	// Load profiles
+	loader := profiles.NewLoader()
+	profilesDir := filepath.Join("..", "..", "profiles")
+	_, err := loader.LoadAll(profilesDir)
+	if err != nil {
+		t.Fatalf("Failed to load profiles: %v", err)
+	}
+
+	// Create scanner
+	scanner := NewScanner(loader)
+
+	// Scan all projects
+	ctx := context.Background()
+	opts := ScanOptions{
+		MaxDepth:      10,
+		IncludeHidden: false,
+		IgnorePaths:   []string{},
+		DryRun:        false,
+		Concurrency:   2,
+	}
+
+	targets, err := scanner.Scan(ctx, []string{tmpDir}, opts)
+	if err != nil {
+		t.Fatalf("Scan failed: %v", err)
+	}
+
+	// Should find targets from all three profiles
+	profilesFound := make(map[string]bool)
+	for _, target := range targets {
+		profilesFound[target.ProfileName] = true
+	}
+
+	expectedProfiles := []string{"Node.js", "Python", "Rust"}
+	for _, profile := range expectedProfiles {
+		if !profilesFound[profile] {
+			t.Errorf("Expected to find target with profile %s", profile)
+		}
+	}
+}
+
+// Benchmark tests
+
+func BenchmarkScanner_SmallDirectory(b *testing.B) {
+	// Create a small directory structure (10 projects)
+	tmpDir := b.TempDir()
+
+	for i := 0; i < 10; i++ {
+		projectDir := filepath.Join(tmpDir, "project"+string(rune('0'+i)))
+		if err := os.MkdirAll(projectDir, 0755); err != nil {
+			b.Fatalf("Failed to create project: %v", err)
+		}
+
+		if err := os.WriteFile(filepath.Join(projectDir, "package.json"), []byte("{}"), 0644); err != nil {
+			b.Fatalf("Failed to create package.json: %v", err)
+		}
+
+		nodeModules := filepath.Join(projectDir, "node_modules")
+		if err := os.MkdirAll(nodeModules, 0755); err != nil {
+			b.Fatalf("Failed to create node_modules: %v", err)
+		}
+
+		// Create some files in node_modules
+		for j := 0; j < 10; j++ {
+			testFile := filepath.Join(nodeModules, "file"+string(rune('0'+j))+".js")
+			if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+				b.Fatalf("Failed to create test file: %v", err)
+			}
+		}
+	}
+
+	// Load profiles
+	loader := profiles.NewLoader()
+	profilesDir := filepath.Join("..", "..", "profiles")
+	if _, err := loader.LoadAll(profilesDir); err != nil {
+		b.Fatalf("Failed to load profiles: %v", err)
+	}
+
+	scanner := NewScanner(loader)
+	ctx := context.Background()
+	opts := ScanOptions{
+		MaxDepth:      10,
+		IncludeHidden: false,
+		IgnorePaths:   []string{},
+		DryRun:        false,
+		Concurrency:   2,
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := scanner.Scan(ctx, []string{tmpDir}, opts)
+		if err != nil {
+			b.Fatalf("Scan failed: %v", err)
+		}
+	}
+}
+
+func BenchmarkScanner_LargeDirectory(b *testing.B) {
+	// Create a larger directory structure (100 projects)
+	tmpDir := b.TempDir()
+
+	for i := 0; i < 100; i++ {
+		projectDir := filepath.Join(tmpDir, "project"+string(rune('0'+i%10)), "sub"+string(rune('0'+i/10)))
+		if err := os.MkdirAll(projectDir, 0755); err != nil {
+			b.Fatalf("Failed to create project: %v", err)
+		}
+
+		if err := os.WriteFile(filepath.Join(projectDir, "package.json"), []byte("{}"), 0644); err != nil {
+			b.Fatalf("Failed to create package.json: %v", err)
+		}
+
+		nodeModules := filepath.Join(projectDir, "node_modules")
+		if err := os.MkdirAll(nodeModules, 0755); err != nil {
+			b.Fatalf("Failed to create node_modules: %v", err)
+		}
+
+		// Create some files
+		for j := 0; j < 5; j++ {
+			testFile := filepath.Join(nodeModules, "file"+string(rune('0'+j))+".js")
+			if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+				b.Fatalf("Failed to create test file: %v", err)
+			}
+		}
+	}
+
+	// Load profiles
+	loader := profiles.NewLoader()
+	profilesDir := filepath.Join("..", "..", "profiles")
+	if _, err := loader.LoadAll(profilesDir); err != nil {
+		b.Fatalf("Failed to load profiles: %v", err)
+	}
+
+	scanner := NewScanner(loader)
+	ctx := context.Background()
+	opts := ScanOptions{
+		MaxDepth:      10,
+		IncludeHidden: false,
+		IgnorePaths:   []string{},
+		DryRun:        false,
+		Concurrency:   4,
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := scanner.Scan(ctx, []string{tmpDir}, opts)
+		if err != nil {
+			b.Fatalf("Scan failed: %v", err)
+		}
+	}
+}
+
+func BenchmarkScanner_ConcurrentVsSequential(b *testing.B) {
+	// Create directory structure
+	tmpDir := b.TempDir()
+
+	for i := 0; i < 50; i++ {
+		projectDir := filepath.Join(tmpDir, "project"+string(rune('0'+i%10)), "sub"+string(rune('0'+i/10)))
+		if err := os.MkdirAll(projectDir, 0755); err != nil {
+			b.Fatalf("Failed to create project: %v", err)
+		}
+
+		if err := os.WriteFile(filepath.Join(projectDir, "package.json"), []byte("{}"), 0644); err != nil {
+			b.Fatalf("Failed to create package.json: %v", err)
+		}
+
+		nodeModules := filepath.Join(projectDir, "node_modules")
+		if err := os.MkdirAll(nodeModules, 0755); err != nil {
+			b.Fatalf("Failed to create node_modules: %v", err)
+		}
+	}
+
+	// Load profiles
+	loader := profiles.NewLoader()
+	profilesDir := filepath.Join("..", "..", "profiles")
+	if _, err := loader.LoadAll(profilesDir); err != nil {
+		b.Fatalf("Failed to load profiles: %v", err)
+	}
+
+	scanner := NewScanner(loader)
+	ctx := context.Background()
+
+	b.Run("Sequential", func(b *testing.B) {
+		opts := ScanOptions{
+			MaxDepth:      10,
+			IncludeHidden: false,
+			IgnorePaths:   []string{},
+			DryRun:        false,
+			Concurrency:   1,
+		}
+
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := scanner.Scan(ctx, []string{tmpDir}, opts)
+			if err != nil {
+				b.Fatalf("Scan failed: %v", err)
+			}
+		}
+	})
+
+	b.Run("Concurrent", func(b *testing.B) {
+		opts := ScanOptions{
+			MaxDepth:      10,
+			IncludeHidden: false,
+			IgnorePaths:   []string{},
+			DryRun:        false,
+			Concurrency:   4,
+		}
+
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := scanner.Scan(ctx, []string{tmpDir}, opts)
+			if err != nil {
+				b.Fatalf("Scan failed: %v", err)
+			}
+		}
+	})
+}

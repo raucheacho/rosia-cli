@@ -1,3 +1,17 @@
+// Package cleaner provides safe file deletion functionality with trash backup.
+//
+// The cleaner engine handles deletion of detected targets with safety features including
+// permission checks, trash system integration for restoration, and concurrent processing
+// with error isolation per target.
+//
+// Example usage:
+//
+//	trashSystem := trash.NewSystem("~/.rosia/trash")
+//	cleaner := cleaner.NewCleaner(trashSystem, nil, nil)
+//	report, err := cleaner.Clean(ctx, targets, cleaner.CleanOptions{
+//	    UseTrash: true,
+//	    Concurrency: 4,
+//	})
 package cleaner
 
 import (
@@ -7,19 +21,27 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/raucheacho/rosia-cli/internal/plugins"
 	"github.com/raucheacho/rosia-cli/internal/telemetry"
 	"github.com/raucheacho/rosia-cli/internal/trash"
 	"github.com/raucheacho/rosia-cli/pkg/logger"
 	"github.com/raucheacho/rosia-cli/pkg/types"
 )
 
-// Cleaner handles safe deletion of targets with trash backup
+// Cleaner handles safe deletion of targets with trash backup.
+//
+// The Cleaner performs permission checks before deletion, moves items to trash
+// for potential restoration, and processes deletions concurrently with error
+// isolation to ensure one failure doesn't stop the entire operation.
 type Cleaner struct {
-	trashSystem    *trash.System
-	telemetryStore telemetry.TelemetryStore
+	trashSystem    *trash.System            // Manages trash operations
+	telemetryStore telemetry.TelemetryStore // Records cleaning statistics
+	pluginRegistry plugins.PluginRegistry   // Manages loaded plugins
 }
 
-// CleanOptions configures the cleaning operation
+// CleanOptions configures the cleaning operation.
+//
+// Options control confirmation prompts, trash system usage, and concurrency settings.
 type CleanOptions struct {
 	SkipConfirmation bool
 	UseTrash         bool
@@ -39,12 +61,18 @@ func New(trashSystem *trash.System) *Cleaner {
 	return &Cleaner{
 		trashSystem:    trashSystem,
 		telemetryStore: nil,
+		pluginRegistry: nil,
 	}
 }
 
 // SetTelemetryStore sets the telemetry store for the cleaner
 func (c *Cleaner) SetTelemetryStore(store telemetry.TelemetryStore) {
 	c.telemetryStore = store
+}
+
+// SetPluginRegistry sets the plugin registry for the cleaner
+func (c *Cleaner) SetPluginRegistry(registry plugins.PluginRegistry) {
+	c.pluginRegistry = registry
 }
 
 // Clean safely deletes targets with confirmation and trash backup
@@ -116,6 +144,14 @@ func (c *Cleaner) Clean(ctx context.Context, targets []types.Target, opts CleanO
 	report.Duration = time.Since(startTime)
 	logger.Info("Clean operation completed: %d files deleted, %d errors", report.FilesDeleted, len(report.Errors))
 
+	// Call plugin.Clean() for plugin-specific cleanup
+	if c.pluginRegistry != nil {
+		if err := c.cleanPlugins(ctx, targets); err != nil {
+			logger.Warn("Plugin clean failed: %v", err)
+			// Don't fail the entire operation if plugins fail
+		}
+	}
+
 	// Record clean events in telemetry
 	if c.telemetryStore != nil {
 		c.recordCleanEvents(targets, report)
@@ -160,37 +196,64 @@ func (c *Cleaner) recordCleanEvents(targets []types.Target, report *types.CleanR
 	}
 }
 
+// cleanPlugins calls Clean() on all registered plugins
+func (c *Cleaner) cleanPlugins(ctx context.Context, targets []types.Target) error {
+	allPlugins := c.pluginRegistry.List()
+	if len(allPlugins) == 0 {
+		return nil
+	}
+
+	logger.Debug("Cleaning with %d plugins", len(allPlugins))
+
+	for _, plugin := range allPlugins {
+		logger.Debug("Calling plugin.Clean() for: %s", plugin.Name())
+
+		if err := plugin.Clean(ctx, targets); err != nil {
+			logger.Warn("Plugin %s clean failed: %v", plugin.Name(), err)
+			// Continue with other plugins
+			continue
+		}
+
+		logger.Debug("Plugin %s clean completed", plugin.Name())
+	}
+
+	return nil
+}
+
 // canDelete checks if the target can be safely deleted
 func (c *Cleaner) canDelete(path string) error {
 	// Check if path exists
-	info, err := os.Stat(path)
+	_, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			logger.Warn("Path does not exist: %s", path)
-			return fmt.Errorf("path does not exist: %s", path)
+			return types.ErrPathNotFound{Path: path}
+		}
+		if os.IsPermission(err) {
+			logger.Error("Permission denied accessing path: %s", path)
+			return types.ErrPermissionDenied{Path: path}
 		}
 		logger.Error("Failed to stat path %s: %v", path, err)
-		return fmt.Errorf("failed to stat path: %w", err)
+		return fmt.Errorf("failed to stat path %s: %w", path, err)
 	}
 
 	// Check write permission on parent directory
-	parentDir := path
-	if !info.IsDir() {
-		parentDir = filepath.Dir(path)
-	} else {
-		parentDir = filepath.Dir(path)
-	}
+	parentDir := filepath.Dir(path)
 
 	parentInfo, err := os.Stat(parentDir)
 	if err != nil {
+		if os.IsPermission(err) {
+			logger.Error("Permission denied accessing parent directory: %s", parentDir)
+			return types.ErrPermissionDenied{Path: parentDir}
+		}
 		logger.Error("Failed to stat parent directory %s: %v", parentDir, err)
-		return fmt.Errorf("failed to stat parent directory: %w", err)
+		return fmt.Errorf("failed to stat parent directory %s: %w", parentDir, err)
 	}
 
 	// Check if parent directory is writable
 	if parentInfo.Mode().Perm()&0200 == 0 {
 		logger.Error("Permission denied: parent directory is not writable: %s", parentDir)
-		return fmt.Errorf("permission denied: parent directory is not writable: %s", parentDir)
+		return types.ErrPermissionDenied{Path: parentDir}
 	}
 
 	return nil

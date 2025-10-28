@@ -1,0 +1,184 @@
+# GoReleaser configuration for Rosia CLI
+# Documentation: https://goreleaser.com
+
+version: 2
+
+before:
+  hooks:
+    # Ensure dependencies are up to date
+    - go mod tidy
+    # Run tests before building
+    - go test ./...
+
+builds:
+  - id: rosia
+    main: ./main.go
+    binary: rosia
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - "7"
+    # Exclude invalid combinations
+    ignore:
+      - goos: windows
+        goarch: arm
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/raucheacho/rosia-cli/cmd.version={{.Version}}
+      - -X github.com/raucheacho/rosia-cli/cmd.commit={{.Commit}}
+      - -X github.com/raucheacho/rosia-cli/cmd.date={{.Date}}
+
+archives:
+  - id: rosia-archive
+    name_template: "rosia_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
+    files:
+      - LICENSE
+      - README.md
+      - profiles/*
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 0
+    - title: Bug Fixes
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 1
+    - title: Performance Improvements
+      regexp: "^.*perf[(\\w)]*:+.*$"
+      order: 2
+    - title: Others
+      order: 999
+
+release:
+  github:
+    owner: raucheacho
+    name: rosia-cli
+  draft: false
+  prerelease: auto
+  mode: replace
+  header: |
+    ## Rosia CLI {{ .Tag }}
+    
+    Release notes for version {{ .Tag }}.
+    
+    ### Installation
+    
+    #### Homebrew (macOS/Linux)
+    ```bash
+    brew tap raucheacho/rosia
+    brew install rosia
+    ```
+    
+    #### Scoop (Windows)
+    ```powershell
+    scoop bucket add rosia https://github.com/raucheacho/scoop-rosia
+    scoop install rosia
+    ```
+    
+    #### Manual Installation
+    Download the appropriate binary for your platform below.
+  footer: |
+    **Full Changelog**: https://github.com/raucheacho/rosia-cli/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+# Homebrew tap configuration
+brews:
+  - name: rosia
+    repository:
+      owner: raucheacho
+      name: homebrew-rosia
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/raucheacho/rosia-cli
+    description: "Clean development dependencies and caches across multiple project types"
+    license: MIT
+    test: |
+      system "#{bin}/rosia", "version"
+    install: |
+      bin.install "rosia"
+      (bash_completion/"rosia").write `#{bin}/rosia completion bash`
+      (zsh_completion/"_rosia").write `#{bin}/rosia completion zsh`
+      (fish_completion/"rosia.fish").write `#{bin}/rosia completion fish`
+
+# Scoop bucket configuration
+scoops:
+  - repository:
+      owner: raucheacho
+      name: scoop-rosia
+      token: "{{ .Env.SCOOP_BUCKET_GITHUB_TOKEN }}"
+    homepage: https://github.com/raucheacho/rosia-cli
+    description: "Clean development dependencies and caches across multiple project types"
+    license: MIT
+
+# Docker images (optional, for future use)
+# Uncomment and configure when ready to publish Docker images
+# dockers:
+#   - image_templates:
+#       - "ghcr.io/raucheacho/rosia:{{ .Version }}-amd64"
+#       - "ghcr.io/raucheacho/rosia:latest-amd64"
+#     use: buildx
+#     dockerfile: Dockerfile
+#     build_flag_templates:
+#       - "--platform=linux/amd64"
+#       - "--label=org.opencontainers.image.created={{.Date}}"
+#       - "--label=org.opencontainers.image.title={{.ProjectName}}"
+#       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+#       - "--label=org.opencontainers.image.version={{.Version}}"
+#     skip_push: auto
+#
+#   - image_templates:
+#       - "ghcr.io/raucheacho/rosia:{{ .Version }}-arm64"
+#       - "ghcr.io/raucheacho/rosia:latest-arm64"
+#     use: buildx
+#     dockerfile: Dockerfile
+#     build_flag_templates:
+#       - "--platform=linux/arm64"
+#       - "--label=org.opencontainers.image.created={{.Date}}"
+#       - "--label=org.opencontainers.image.title={{.ProjectName}}"
+#       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+#       - "--label=org.opencontainers.image.version={{.Version}}"
+#     skip_push: auto
+#
+# docker_manifests:
+#   - name_template: "ghcr.io/raucheacho/rosia:{{ .Version }}"
+#     image_templates:
+#       - "ghcr.io/raucheacho/rosia:{{ .Version }}-amd64"
+#       - "ghcr.io/raucheacho/rosia:{{ .Version }}-arm64"
+#     skip_push: auto
+#
+#   - name_template: "ghcr.io/raucheacho/rosia:latest"
+#     image_templates:
+#       - "ghcr.io/raucheacho/rosia:latest-amd64"
+#       - "ghcr.io/raucheacho/rosia:latest-arm64"
+#     skip_push: auto
+
+# Announce releases (optional)
+announce:
+  skip: "{{gt .Patch 0}}"

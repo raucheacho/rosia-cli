@@ -1,0 +1,49 @@
+# Git
+.git
+.gitignore
+.github
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# Build artifacts
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+rosia
+
+# Test files
+*_test.go
+testdata/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# GoReleaser
+.goreleaser.yml
+
+# Installation scripts
+install.sh
+install.ps1
+homebrew-formula.rb
+scoop-manifest.json
+
+# Examples
+examples/

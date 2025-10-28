@@ -19,12 +19,34 @@ var restoreCmd = &cobra.Command{
 	Use:   "restore [trash-id]",
 	Short: "Restore a trashed item to its original location",
 	Long: `Restore a previously trashed item back to its original location.
-Use --list to see all available trashed items.
+
+When you clean files with rosia, they are moved to ~/.rosia/trash instead
+of being permanently deleted. This command allows you to restore those files
+if you change your mind or accidentally deleted something important.
+
+Flags:
+  -l, --list                List all trashed items with their IDs
+      --all                 Restore all trashed items
 
 Examples:
-  rosia restore 20250428_143022_node_modules
+  # List all trashed items
   rosia restore --list
-  rosia restore --all`,
+
+  # Restore a specific item by ID
+  rosia restore 20250428_143022_node_modules
+
+  # Restore all trashed items
+  rosia restore --all
+
+Trash ID Format:
+  Trash IDs follow the format: YYYYMMDD_HHMMSS_<basename>
+  Example: 20250428_143022_node_modules
+
+Tips:
+  • Use --list to see available items before restoring
+  • Trash items are automatically cleaned after retention period (default: 3 days)
+  • Original paths must be available for restoration
+  • If path conflicts exist, restoration will fail with an error`,
 	RunE: runRestore,
 }
 

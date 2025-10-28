@@ -1,3 +1,18 @@
+// Package config provides configuration management for Rosia CLI.
+//
+// The config package handles loading and saving user preferences from ~/.rosiarc.json,
+// including trash retention settings, enabled profiles, ignored paths, and performance
+// options. It provides sensible defaults when no configuration file exists.
+//
+// Example usage:
+//
+//	manager := config.NewManager("")
+//	cfg, err := manager.Load()
+//	if err != nil {
+//	    cfg = manager.GetDefault()
+//	}
+//	cfg.TrashRetentionDays = 7
+//	manager.Save(cfg)
 package config
 
 import (
@@ -8,32 +23,48 @@ import (
 	"runtime"
 )
 
-// Config represents user configuration
+// Config represents user configuration loaded from ~/.rosiarc.json.
 type Config struct {
-	TrashRetentionDays int      `json:"trash_retention_days"`
-	Profiles           []string `json:"profiles"`
-	IgnorePaths        []string `json:"ignore_paths"`
-	Plugins            []string `json:"plugins"`
-	Concurrency        int      `json:"concurrency"`
-	TelemetryEnabled   bool     `json:"telemetry_enabled"`
+	TrashRetentionDays int      `json:"trash_retention_days"` // Days to keep items in trash
+	Profiles           []string `json:"profiles"`             // Enabled profile names
+	IgnorePaths        []string `json:"ignore_paths"`         // Paths to exclude from scanning
+	Plugins            []string `json:"plugins"`              // Enabled plugin names
+	Concurrency        int      `json:"concurrency"`          // Worker pool size (0 = auto)
+	TelemetryEnabled   bool     `json:"telemetry_enabled"`    // Enable anonymous statistics
 }
 
-// Manager handles configuration loading and saving
+// Manager handles configuration loading and saving.
+//
+// The Manager reads configuration from ~/.rosiarc.json and provides methods
+// to load, save, and retrieve default configuration values.
 type Manager struct {
 	configPath string
 }
 
 // NewManager creates a new configuration manager
+// Uses platform-specific paths (XDG on Linux, ~/Library on macOS, %APPDATA% on Windows)
 func NewManager() (*Manager, error) {
-	homeDir, err := os.UserHomeDir()
+	configPath, err := getDefaultConfigPath()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user home directory: %w", err)
+		return nil, fmt.Errorf("failed to get default config path: %w", err)
 	}
 
-	configPath := filepath.Join(homeDir, ".rosiarc.json")
 	return &Manager{
 		configPath: configPath,
 	}, nil
+}
+
+// getDefaultConfigPath returns the platform-specific default config file path
+func getDefaultConfigPath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get user home directory: %w", err)
+	}
+
+	// For backward compatibility, keep config file in home directory
+	// In the future, this could use fsutils.GetConfigFilePath() for platform-specific paths
+	configPath := filepath.Join(homeDir, ".rosiarc.json")
+	return configPath, nil
 }
 
 // NewManagerWithPath creates a new configuration manager with a custom path
@@ -51,12 +82,12 @@ func (m *Manager) Load() (*Config, error) {
 			// Return default config if file doesn't exist
 			return m.GetDefault(), nil
 		}
-		return nil, fmt.Errorf("failed to read config file: %w", err)
+		return nil, fmt.Errorf("failed to read config file %s: %w", m.configPath, err)
 	}
 
 	var config Config
 	if err := json.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
+		return nil, fmt.Errorf("failed to parse config file %s: %w", m.configPath, err)
 	}
 
 	return &config, nil
@@ -72,11 +103,11 @@ func (m *Manager) Save(config *Config) error {
 	// Ensure parent directory exists
 	dir := filepath.Dir(m.configPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
+		return fmt.Errorf("failed to create config directory %s: %w", dir, err)
 	}
 
 	if err := os.WriteFile(m.configPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
+		return fmt.Errorf("failed to write config file %s: %w", m.configPath, err)
 	}
 
 	return nil

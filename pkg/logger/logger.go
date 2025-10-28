@@ -1,3 +1,16 @@
+// Package logger provides color-coded logging functionality for Rosia CLI.
+//
+// The logger supports multiple log levels (debug, info, warn, error) with
+// color-coded output for better readability. It includes verbose mode support
+// and thread-safe operations.
+//
+// Example usage:
+//
+//	logger.SetVerbose(true)
+//	logger.Info("Scanning directory: %s", path)
+//	logger.Warn("Skipping hidden directory: %s", path)
+//	logger.Error("Failed to delete: %v", err)
+//	logger.Debug("Worker %d processing target", workerID)
 package logger
 
 import (
@@ -8,7 +21,7 @@ import (
 	"time"
 )
 
-// LogLevel represents the severity of a log message
+// LogLevel represents the severity of a log message.
 type LogLevel int
 
 const (

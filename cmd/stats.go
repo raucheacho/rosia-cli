@@ -12,8 +12,33 @@ import (
 var statsCmd = &cobra.Command{
 	Use:   "stats",
 	Short: "Display telemetry statistics",
-	Long:  `Display statistics about scan and clean operations including total scans, total space cleaned, and average sizes by profile type.`,
-	RunE:  runStats,
+	Long: `Display statistics about scan and clean operations.
+
+The stats command shows aggregated data from your rosia usage, including:
+  • Total number of scans performed
+  • Total disk space cleaned
+  • Average size by target type (node_modules, target/, etc.)
+  • Last scan timestamp
+
+Statistics are stored locally in ~/.rosia/stats.json and are never
+transmitted unless you explicitly enable cloud telemetry.
+
+Examples:
+  # Display statistics
+  rosia stats
+
+Statistics Include:
+  • Total Scans: Number of scan operations performed
+  • Total Cleaned: Total disk space reclaimed across all clean operations
+  • Average Sizes: Average size per target type (helps identify space hogs)
+  • Last Scan: Timestamp of most recent scan operation
+
+Privacy:
+  • All statistics are stored locally by default
+  • No data is transmitted without explicit opt-in
+  • Enable cloud telemetry: rosia config set telemetry_enabled true
+  • Stats file location: ~/.rosia/stats.json`,
+	RunE: runStats,
 }
 
 func init() {

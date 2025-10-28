@@ -7,10 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/raucheacho/rosia-cli/internal/config"
-	"github.com/raucheacho/rosia-cli/internal/profiles"
 	"github.com/raucheacho/rosia-cli/internal/scanner"
 	"github.com/raucheacho/rosia-cli/pkg/logger"
+	"github.com/raucheacho/rosia-cli/pkg/progress"
 	"github.com/raucheacho/rosia-cli/pkg/types"
 	"github.com/spf13/cobra"
 )
@@ -28,11 +27,38 @@ var scanCmd = &cobra.Command{
 	Long: `Scan one or more directories to identify cleanable files and caches
 based on loaded technology profiles.
 
+The scan command recursively traverses directories and identifies targets
+that match cleaning patterns for various technologies (Node.js, Python, Rust, etc.).
+Results show the path, type, and size of each cleanable target.
+
+Flags:
+  -d, --depth int           Maximum depth to scan (0 = unlimited)
+  -H, --include-hidden      Include hidden files and directories
+      --dry-run             Perform scan without making any changes
+
 Examples:
+  # Scan current directory
   rosia scan .
+
+  # Scan specific directory
   rosia scan ~/projects
+
+  # Scan multiple directories
   rosia scan ~/projects/app1 ~/projects/app2
-  rosia scan . --depth 3 --include-hidden`,
+
+  # Limit scan depth to 3 levels
+  rosia scan . --depth 3
+
+  # Include hidden files and directories
+  rosia scan ~/projects --include-hidden
+
+  # Dry run mode (no changes)
+  rosia scan . --dry-run
+
+Tips:
+  • Use --depth to limit scanning in large directory trees
+  • Combine with 'clean' command: rosia scan . && rosia clean .
+  • Use --verbose flag for detailed logging`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runScan,
 }
@@ -49,29 +75,16 @@ func init() {
 func runScan(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	// Load configuration
-	logger.Debug("Loading configuration")
-	configMgr, err := loadConfigManager()
-	if err != nil {
-		logger.Error("Failed to load config manager: %v", err)
-		return fmt.Errorf("failed to load config manager: %w", err)
+	// Use global configuration and profile loader
+	cfg := GetGlobalConfig()
+	profileLoader := GetGlobalProfileLoader()
+
+	if profileLoader == nil {
+		logger.Error("Profile loader not initialized")
+		return fmt.Errorf("profile loader not initialized")
 	}
 
-	cfg, err := configMgr.LoadAndValidate()
-	if err != nil {
-		logger.Error("Failed to load configuration: %v", err)
-		return fmt.Errorf("failed to load configuration: %w", err)
-	}
-
-	// Load profiles
-	logger.Debug("Loading profiles")
-	profileLoader, err := loadProfiles(cfg)
-	if err != nil {
-		logger.Error("Failed to load profiles: %v", err)
-		return fmt.Errorf("failed to load profiles: %w", err)
-	}
-
-	logger.Info("Loaded %d profiles", len(profileLoader.GetProfiles()))
+	logger.Debug("Using %d profile(s)", len(profileLoader.GetProfiles()))
 
 	// Create scanner
 	scan := scanner.NewScanner(profileLoader)
@@ -114,19 +127,71 @@ func runScan(cmd *cobra.Command, args []string) error {
 		scanPaths = append(scanPaths, absPath)
 	}
 
-	// Perform scan
+	// Perform scan with progress
 	logger.Info("Scanning %d path(s)...", len(scanPaths))
 
-	targets, err := scan.Scan(ctx, scanPaths, opts)
-	if err != nil {
-		logger.Error("Scan failed: %v", err)
-		return fmt.Errorf("scan failed: %w", err)
-	}
+	// Use async scan with progress bar
+	targetChan, errorChan := scan.ScanAsync(ctx, scanPaths, opts)
+
+	// Collect targets with progress indication
+	targets := collectTargetsWithProgress(targetChan, errorChan)
 
 	// Display results
 	displayScanResults(targets)
 
 	return nil
+}
+
+func collectTargetsWithProgress(targetChan <-chan types.Target, errorChan <-chan error) []types.Target {
+	targets := make([]types.Target, 0)
+
+	// Create a simple progress indicator
+	fmt.Println("Scanning directories...")
+	bar := progress.NewSimpleBar(100, "Progress", os.Stdout)
+
+	targetCount := 0
+	errorCount := 0
+	done := false
+
+	for !done {
+		select {
+		case target, ok := <-targetChan:
+			if !ok {
+				targetChan = nil
+				if errorChan == nil {
+					done = true
+				}
+				continue
+			}
+			targets = append(targets, target)
+			targetCount++
+
+			// Update progress bar label with current count
+			bar.SetLabel(fmt.Sprintf("Found %d targets", targetCount))
+			bar.IncrementBy(1)
+
+		case err, ok := <-errorChan:
+			if !ok {
+				errorChan = nil
+				if targetChan == nil {
+					done = true
+				}
+				continue
+			}
+			if err != nil {
+				logger.Warn("Scan error: %v", err)
+				errorCount++
+			}
+		}
+	}
+
+	bar.Finish()
+
+	if errorCount > 0 {
+		logger.Warn("Completed with %d error(s)", errorCount)
+	}
+
+	return targets
 }
 
 func displayScanResults(targets []types.Target) {
@@ -164,43 +229,4 @@ func displayScanResults(targets []types.Target) {
 	fmt.Println(strings.Repeat("-", 80))
 	fmt.Printf("Total: %s across %d target(s)\n", formatSize(totalSize), len(targets))
 	fmt.Println("\nTo clean these targets, run: rosia clean")
-}
-
-// loadConfigManager creates a config manager based on flags
-func loadConfigManager() (*config.Manager, error) {
-	if configPath != "" {
-		return config.NewManagerWithPath(configPath), nil
-	}
-	return config.NewManager()
-}
-
-// loadProfiles loads profiles based on configuration
-func loadProfiles(cfg *config.Config) (*profiles.Loader, error) {
-	loader := profiles.NewLoader()
-
-	// Determine profiles directory
-	profilesDir := "profiles"
-	if _, err := os.Stat(profilesDir); os.IsNotExist(err) {
-		// Try relative to executable
-		execPath, err := os.Executable()
-		if err == nil {
-			execDir := filepath.Dir(execPath)
-			profilesDir = filepath.Join(execDir, "profiles")
-		}
-	}
-
-	// Load all profiles
-	loadedProfiles, err := loader.LoadAll(profilesDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load profiles: %w", err)
-	}
-
-	if verbose {
-		fmt.Printf("Loaded profiles from: %s\n", profilesDir)
-		for _, p := range loadedProfiles {
-			fmt.Printf("  - %s (v%s): %s\n", p.Name, p.Version, p.Description)
-		}
-	}
-
-	return loader, nil
 }

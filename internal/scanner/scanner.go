@@ -1,3 +1,18 @@
+// Package scanner provides directory scanning functionality for detecting cleanable targets.
+//
+// The scanner engine recursively traverses directories, matches files against loaded
+// profiles, and calculates sizes for detected targets. It supports concurrent scanning
+// with configurable worker pools for optimal performance.
+//
+// Example usage:
+//
+//	loader := profiles.NewLoader()
+//	profiles, _ := loader.LoadAll("profiles/")
+//	scanner := scanner.NewScanner(loader, nil, nil, nil)
+//	targets, err := scanner.Scan(ctx, []string{"/path/to/projects"}, scanner.ScanOptions{
+//	    MaxDepth: 5,
+//	    Concurrency: 8,
+//	})
 package scanner
 
 import (
@@ -9,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/raucheacho/rosia-cli/internal/plugins"
 	"github.com/raucheacho/rosia-cli/internal/profiles"
 	"github.com/raucheacho/rosia-cli/internal/sizecalc"
 	"github.com/raucheacho/rosia-cli/internal/telemetry"
@@ -16,14 +32,22 @@ import (
 	"github.com/raucheacho/rosia-cli/pkg/types"
 )
 
-// Scanner handles directory scanning and target detection
+// Scanner handles directory scanning and target detection.
+//
+// The Scanner traverses directories recursively, matches files against loaded profiles,
+// and calculates sizes for detected targets. It integrates with the plugin system to
+// allow custom scanning logic.
 type Scanner struct {
-	profileLoader  *profiles.Loader
-	sizeCalc       *sizecalc.SizeCalc
-	telemetryStore telemetry.TelemetryStore
+	profileLoader  *profiles.Loader         // Loads and matches profiles
+	sizeCalc       *sizecalc.SizeCalc       // Calculates directory sizes
+	telemetryStore telemetry.TelemetryStore // Records scan statistics
+	pluginRegistry plugins.PluginRegistry   // Manages loaded plugins
 }
 
-// ScanOptions configures the scanning behavior
+// ScanOptions configures the scanning behavior.
+//
+// Options control depth limits, hidden file inclusion, dry-run mode,
+// concurrency settings, and path exclusions.
 type ScanOptions struct {
 	MaxDepth      int
 	IncludeHidden bool
@@ -38,6 +62,7 @@ func NewScanner(loader *profiles.Loader) *Scanner {
 		profileLoader:  loader,
 		sizeCalc:       sizecalc.NewSizeCalc(0), // 0 means auto-detect concurrency
 		telemetryStore: nil,
+		pluginRegistry: nil,
 	}
 }
 
@@ -47,12 +72,18 @@ func NewScannerWithSizeCalc(loader *profiles.Loader, sizeCalc *sizecalc.SizeCalc
 		profileLoader:  loader,
 		sizeCalc:       sizeCalc,
 		telemetryStore: nil,
+		pluginRegistry: nil,
 	}
 }
 
 // SetTelemetryStore sets the telemetry store for the scanner
 func (s *Scanner) SetTelemetryStore(store telemetry.TelemetryStore) {
 	s.telemetryStore = store
+}
+
+// SetPluginRegistry sets the plugin registry for the scanner
+func (s *Scanner) SetPluginRegistry(registry plugins.PluginRegistry) {
+	s.pluginRegistry = registry
 }
 
 // Scan performs a synchronous scan of the given paths
@@ -78,6 +109,18 @@ func (s *Scanner) Scan(ctx context.Context, paths []string, opts ScanOptions) ([
 
 		logger.Debug("Found %d targets in path: %s", len(pathTargets), path)
 		targets = append(targets, pathTargets...)
+	}
+
+	// Call plugin.Scan() for each registered plugin
+	if s.pluginRegistry != nil {
+		pluginTargets, err := s.scanPlugins(ctx)
+		if err != nil {
+			logger.Warn("Plugin scan failed: %v", err)
+			// Continue with core targets even if plugins fail
+		} else {
+			logger.Debug("Found %d targets from plugins", len(pluginTargets))
+			targets = append(targets, pluginTargets...)
+		}
 	}
 
 	// Calculate sizes for all targets
@@ -121,6 +164,33 @@ func (s *Scanner) recordScanEvent(targetsFound int) {
 	if err := s.telemetryStore.Record(event); err != nil {
 		logger.Warn("Failed to record scan telemetry: %v", err)
 	}
+}
+
+// scanPlugins calls Scan() on all registered plugins and merges results
+func (s *Scanner) scanPlugins(ctx context.Context) ([]types.Target, error) {
+	allPlugins := s.pluginRegistry.List()
+	if len(allPlugins) == 0 {
+		return []types.Target{}, nil
+	}
+
+	logger.Debug("Scanning with %d plugins", len(allPlugins))
+	allTargets := make([]types.Target, 0)
+
+	for _, plugin := range allPlugins {
+		logger.Debug("Calling plugin.Scan() for: %s", plugin.Name())
+
+		targets, err := plugin.Scan(ctx)
+		if err != nil {
+			logger.Warn("Plugin %s scan failed: %v", plugin.Name(), err)
+			// Continue with other plugins
+			continue
+		}
+
+		logger.Debug("Plugin %s found %d targets", plugin.Name(), len(targets))
+		allTargets = append(allTargets, targets...)
+	}
+
+	return allTargets, nil
 }
 
 // scanPath scans a single path recursively
@@ -236,7 +306,13 @@ func (s *Scanner) scanPath(ctx context.Context, rootPath string, opts ScanOption
 func (s *Scanner) createTarget(path string, profile *types.Profile) (types.Target, error) {
 	info, err := os.Stat(path)
 	if err != nil {
-		return types.Target{}, err
+		if os.IsNotExist(err) {
+			return types.Target{}, types.ErrPathNotFound{Path: path}
+		}
+		if os.IsPermission(err) {
+			return types.Target{}, types.ErrPermissionDenied{Path: path}
+		}
+		return types.Target{}, fmt.Errorf("failed to stat path %s: %w", path, err)
 	}
 
 	target := types.Target{

@@ -7,12 +7,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/raucheacho/rosia-cli/internal/cleaner"
 	"github.com/raucheacho/rosia-cli/internal/scanner"
 	"github.com/raucheacho/rosia-cli/internal/telemetry"
 	"github.com/raucheacho/rosia-cli/internal/trash"
 	"github.com/raucheacho/rosia-cli/pkg/logger"
+	"github.com/raucheacho/rosia-cli/pkg/progress"
 	"github.com/raucheacho/rosia-cli/pkg/types"
 	"github.com/spf13/cobra"
 )
@@ -32,11 +34,44 @@ var cleanCmd = &cobra.Command{
 	Long: `Clean one or more directories by removing cleanable files and caches.
 Files are moved to trash by default for safety and can be restored later.
 
+The clean command scans directories for cleanable targets and removes them
+after confirmation. Deleted files are moved to ~/.rosia/trash and can be
+restored using the 'restore' command.
+
+Flags:
+  -y, --yes                 Skip confirmation prompt
+      --no-trash            Delete directly without moving to trash (dangerous!)
+      --rescan              Rescan directories before cleaning
+  -d, --depth int           Maximum depth to scan (0 = unlimited)
+  -H, --include-hidden      Include hidden files and directories
+
 Examples:
+  # Clean current directory (with confirmation)
   rosia clean .
+
+  # Clean without confirmation prompt
   rosia clean ~/projects --yes
-  rosia clean . --no-trash
-  rosia clean ~/projects --rescan --depth 3`,
+
+  # Clean without trash (permanent deletion)
+  rosia clean . --no-trash --yes
+
+  # Rescan before cleaning
+  rosia clean ~/projects --rescan
+
+  # Clean with depth limit
+  rosia clean ~/projects --rescan --depth 3
+
+Safety Features:
+  • Confirmation prompt before deletion (use --yes to skip)
+  • Files moved to trash by default (restore with 'rosia restore')
+  • Trash retention period configurable (default: 3 days)
+  • Permission checks before deletion
+
+Tips:
+  • Always review scan results before cleaning
+  • Use --rescan to ensure fresh results
+  • Avoid --no-trash unless you're certain
+  • Check trash with: ls ~/.rosia/trash`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runClean,
 }
@@ -55,18 +90,13 @@ func init() {
 func runClean(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	// Load configuration
-	logger.Debug("Loading configuration")
-	configMgr, err := loadConfigManager()
-	if err != nil {
-		logger.Error("Failed to load config manager: %v", err)
-		return fmt.Errorf("failed to load config manager: %w", err)
-	}
+	// Use global configuration and profile loader
+	cfg := GetGlobalConfig()
+	profileLoader := GetGlobalProfileLoader()
 
-	cfg, err := configMgr.LoadAndValidate()
-	if err != nil {
-		logger.Error("Failed to load configuration: %v", err)
-		return fmt.Errorf("failed to load configuration: %w", err)
+	if profileLoader == nil {
+		logger.Error("Profile loader not initialized")
+		return fmt.Errorf("profile loader not initialized")
 	}
 
 	// Initialize trash system
@@ -75,14 +105,6 @@ func runClean(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		logger.Error("Failed to initialize trash system: %v", err)
 		return fmt.Errorf("failed to initialize trash system: %w", err)
-	}
-
-	// Load profiles
-	logger.Debug("Loading profiles")
-	profileLoader, err := loadProfiles(cfg)
-	if err != nil {
-		logger.Error("Failed to load profiles: %v", err)
-		return fmt.Errorf("failed to load profiles: %w", err)
 	}
 
 	// Create scanner
@@ -192,14 +214,20 @@ func runClean(cmd *cobra.Command, args []string) error {
 		Concurrency:      cfg.Concurrency,
 	}
 
-	// Perform cleaning
+	// Perform cleaning with progress
 	fmt.Println("\nCleaning targets...")
 	logger.Info("Starting clean operation for %d targets", len(targets))
-	report, err := clean.Clean(ctx, targets, cleanOpts)
+
+	// Use async cleaning with progress bar
+	startTime := time.Now()
+	progressCh, err := clean.CleanAsync(ctx, targets, cleanOpts)
 	if err != nil {
-		logger.Error("Clean failed: %v", err)
-		return fmt.Errorf("clean failed: %w", err)
+		logger.Error("Failed to start clean operation: %v", err)
+		return fmt.Errorf("failed to start clean operation: %w", err)
 	}
+
+	// Collect results with progress indication
+	report := collectCleanProgressWithBar(progressCh, startTime, len(targets))
 
 	// Display report
 	displayCleanReport(report)
@@ -216,6 +244,39 @@ func runClean(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func collectCleanProgressWithBar(progressCh <-chan cleaner.CleanProgress, startTime time.Time, total int) *types.CleanReport {
+	report := &types.CleanReport{
+		TotalSize:    0,
+		FilesDeleted: 0,
+		Errors:       []types.CleanError{},
+		TrashedItems: []string{},
+	}
+
+	// Create progress bar
+	bar := progress.NewSimpleBar(total, "Cleaning", os.Stdout)
+
+	for prog := range progressCh {
+		if prog.Error != nil {
+			report.Errors = append(report.Errors, types.CleanError{
+				Target: prog.Target,
+				Error:  prog.Error,
+			})
+		} else {
+			report.TotalSize += prog.Target.Size
+			report.FilesDeleted++
+		}
+
+		// Update progress
+		bar.SetLabel(fmt.Sprintf("Cleaning (%d/%d)", prog.Current, prog.Total))
+		bar.Increment()
+	}
+
+	bar.Finish()
+	report.Duration = time.Since(startTime)
+
+	return report
 }
 
 func confirmClean(totalSize int64, targetCount int) bool {

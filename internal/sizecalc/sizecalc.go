@@ -1,3 +1,13 @@
+// Package sizecalc provides efficient directory size calculation.
+//
+// The sizecalc package computes directory and file sizes with support for
+// concurrent processing, symlink handling, and context cancellation. It's
+// used by the scanner to determine the size of detected targets.
+//
+// Example usage:
+//
+//	calc := sizecalc.NewSizeCalc(4)
+//	size, err := calc.CalculateSize(ctx, "/path/to/directory")
 package sizecalc
 
 import (
@@ -12,7 +22,10 @@ import (
 	"github.com/raucheacho/rosia-cli/pkg/types"
 )
 
-// SizeCalc computes directory and file sizes
+// SizeCalc computes directory and file sizes.
+//
+// It uses concurrent workers to efficiently calculate sizes of large
+// directory trees while safely handling symlinks and permission errors.
 type SizeCalc struct {
 	concurrency int
 }

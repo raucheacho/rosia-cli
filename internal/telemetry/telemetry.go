@@ -1,30 +1,52 @@
+// Package telemetry provides statistics tracking and reporting functionality.
+//
+// The telemetry system records scan and clean operations locally in ~/.rosia/stats.json,
+// enabling users to track disk space savings over time. All data is stored locally
+// unless the user explicitly opts in to cloud telemetry.
+//
+// Example usage:
+//
+//	store := telemetry.NewStore("~/.rosia/stats.json")
+//	store.Record(telemetry.TelemetryEvent{
+//	    Type: "scan",
+//	    Data: map[string]interface{}{"targets_found": 42},
+//	})
+//	stats, _ := store.GetStats()
 package telemetry
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 )
 
-// TelemetryEvent represents a single telemetry event
+// TelemetryEvent represents a single telemetry event.
+//
+// Events are recorded for scan and clean operations with associated metadata.
 type TelemetryEvent struct {
-	Type      string                 `json:"type"`
-	Timestamp time.Time              `json:"timestamp"`
-	Data      map[string]interface{} `json:"data"`
+	Type      string                 `json:"type"`      // Event type (e.g., "scan", "clean")
+	Timestamp time.Time              `json:"timestamp"` // When the event occurred
+	Data      map[string]interface{} `json:"data"`      // Event-specific data
 }
 
-// Stats represents aggregated telemetry statistics
+// Stats represents aggregated telemetry statistics.
+//
+// Stats are computed from recorded events and provide insights into
+// cleaning history and disk space savings.
 type Stats struct {
-	TotalScans        int              `json:"total_scans"`
-	TotalCleaned      int64            `json:"total_cleaned"`
-	AverageSizeByType map[string]int64 `json:"average_size_by_type"`
-	LastScan          time.Time        `json:"last_scan"`
-	Events            []TelemetryEvent `json:"events"`
+	TotalScans        int              `json:"total_scans"`          // Total number of scans performed
+	TotalCleaned      int64            `json:"total_cleaned"`        // Total bytes cleaned
+	AverageSizeByType map[string]int64 `json:"average_size_by_type"` // Average size per target type
+	LastScan          time.Time        `json:"last_scan"`            // Timestamp of last scan
+	Events            []TelemetryEvent `json:"events"`               // All recorded events
 }
 
-// TelemetryStore defines the interface for telemetry operations
+// TelemetryStore defines the interface for telemetry operations.
+//
+// Implementations handle recording events and computing statistics.
 type TelemetryStore interface {
 	Record(event TelemetryEvent) error
 	GetStats() (*Stats, error)
@@ -42,7 +64,7 @@ func NewFileStore(filePath string) (*FileStore, error) {
 	// Ensure directory exists
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create telemetry directory %s: %w", dir, err)
 	}
 
 	store := &FileStore{
@@ -58,7 +80,7 @@ func NewFileStore(filePath string) (*FileStore, error) {
 			Events:            []TelemetryEvent{},
 		}
 		if err := store.save(initialStats); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to initialize telemetry file: %w", err)
 		}
 	}
 
@@ -72,7 +94,7 @@ func (fs *FileStore) Record(event TelemetryEvent) error {
 
 	stats, err := fs.load()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to load telemetry stats: %w", err)
 	}
 
 	// Update aggregated statistics based on event type BEFORE adding to events list
@@ -165,12 +187,12 @@ func (fs *FileStore) Export() ([]byte, error) {
 func (fs *FileStore) load() (*Stats, error) {
 	data, err := os.ReadFile(fs.filePath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read telemetry file %s: %w", fs.filePath, err)
 	}
 
 	var stats Stats
 	if err := json.Unmarshal(data, &stats); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse telemetry file %s: %w", fs.filePath, err)
 	}
 
 	// Initialize map if nil
@@ -185,17 +207,25 @@ func (fs *FileStore) load() (*Stats, error) {
 func (fs *FileStore) save(stats *Stats) error {
 	data, err := json.MarshalIndent(stats, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal telemetry stats: %w", err)
 	}
 
-	return os.WriteFile(fs.filePath, data, 0644)
+	if err := os.WriteFile(fs.filePath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write telemetry file %s: %w", fs.filePath, err)
+	}
+
+	return nil
 }
 
 // GetDefaultStatsPath returns the default path for the stats file
+// Uses platform-specific paths (XDG on Linux, ~/Library on macOS, %LOCALAPPDATA% on Windows)
 func GetDefaultStatsPath() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get user home directory: %w", err)
 	}
+
+	// For backward compatibility, keep stats file in ~/.rosia
+	// In the future, this could use fsutils.GetStatsFilePath() for platform-specific paths
 	return filepath.Join(homeDir, ".rosia", "stats.json"), nil
 }
