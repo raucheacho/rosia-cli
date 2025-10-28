@@ -1,7 +1,12 @@
 package main
 
-import "fmt"
+import (
+	"os"
+
+	"github.com/raucheacho/rosia-cli/cmd"
+)
 
 func main() {
-	fmt.Println("hello from rosia")
+	exitCode := cmd.ExecuteWithExitCode()
+	os.Exit(exitCode)
 }

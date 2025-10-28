@@ -11,13 +11,16 @@ import (
 
 	"github.com/raucheacho/rosia-cli/internal/profiles"
 	"github.com/raucheacho/rosia-cli/internal/sizecalc"
+	"github.com/raucheacho/rosia-cli/internal/telemetry"
+	"github.com/raucheacho/rosia-cli/pkg/logger"
 	"github.com/raucheacho/rosia-cli/pkg/types"
 )
 
 // Scanner handles directory scanning and target detection
 type Scanner struct {
-	profileLoader *profiles.Loader
-	sizeCalc      *sizecalc.SizeCalc
+	profileLoader  *profiles.Loader
+	sizeCalc       *sizecalc.SizeCalc
+	telemetryStore telemetry.TelemetryStore
 }
 
 // ScanOptions configures the scanning behavior
@@ -32,17 +35,24 @@ type ScanOptions struct {
 // NewScanner creates a new scanner with the given profile loader
 func NewScanner(loader *profiles.Loader) *Scanner {
 	return &Scanner{
-		profileLoader: loader,
-		sizeCalc:      sizecalc.NewSizeCalc(0), // 0 means auto-detect concurrency
+		profileLoader:  loader,
+		sizeCalc:       sizecalc.NewSizeCalc(0), // 0 means auto-detect concurrency
+		telemetryStore: nil,
 	}
 }
 
 // NewScannerWithSizeCalc creates a new scanner with a custom size calculator
 func NewScannerWithSizeCalc(loader *profiles.Loader, sizeCalc *sizecalc.SizeCalc) *Scanner {
 	return &Scanner{
-		profileLoader: loader,
-		sizeCalc:      sizeCalc,
+		profileLoader:  loader,
+		sizeCalc:       sizeCalc,
+		telemetryStore: nil,
 	}
+}
+
+// SetTelemetryStore sets the telemetry store for the scanner
+func (s *Scanner) SetTelemetryStore(store telemetry.TelemetryStore) {
+	s.telemetryStore = store
 }
 
 // Scan performs a synchronous scan of the given paths
@@ -53,29 +63,64 @@ func (s *Scanner) Scan(ctx context.Context, paths []string, opts ScanOptions) ([
 		// Check context cancellation
 		select {
 		case <-ctx.Done():
+			logger.Debug("Scan cancelled by context: %v", ctx.Err())
 			return targets, ctx.Err()
 		default:
 		}
 
 		// Scan this path
+		logger.Debug("Scanning path: %s", path)
 		pathTargets, err := s.scanPath(ctx, path, opts)
 		if err != nil {
+			logger.Error("Failed to scan path %s: %v", path, err)
 			return targets, fmt.Errorf("failed to scan path %s: %w", path, err)
 		}
 
+		logger.Debug("Found %d targets in path: %s", len(pathTargets), path)
 		targets = append(targets, pathTargets...)
 	}
 
 	// Calculate sizes for all targets
 	if len(targets) > 0 {
+		logger.Debug("Calculating sizes for %d targets", len(targets))
 		targets, err := s.sizeCalc.CalculateTargets(ctx, targets)
 		if err != nil {
+			logger.Error("Failed to calculate sizes: %v", err)
 			return targets, fmt.Errorf("failed to calculate sizes: %w", err)
 		}
+
+		// Record scan event in telemetry
+		if s.telemetryStore != nil {
+			s.recordScanEvent(len(targets))
+		}
+
 		return targets, nil
 	}
 
+	logger.Debug("No targets found")
+
+	// Record scan event even if no targets found
+	if s.telemetryStore != nil {
+		s.recordScanEvent(0)
+	}
+
 	return targets, nil
+}
+
+// recordScanEvent records a scan event in telemetry
+func (s *Scanner) recordScanEvent(targetsFound int) {
+	event := telemetry.TelemetryEvent{
+		Type:      "scan",
+		Timestamp: time.Now(),
+		Data: map[string]interface{}{
+			"timestamp":     time.Now(),
+			"targets_found": targetsFound,
+		},
+	}
+
+	if err := s.telemetryStore.Record(event); err != nil {
+		logger.Warn("Failed to record scan telemetry: %v", err)
+	}
 }
 
 // scanPath scans a single path recursively
@@ -107,7 +152,7 @@ func (s *Scanner) scanPath(ctx context.Context, rootPath string, opts ScanOption
 
 		if err != nil {
 			// Log error but continue walking
-			fmt.Fprintf(os.Stderr, "Warning: error accessing %s: %v\n", path, err)
+			logger.Warn("Error accessing path %s: %v", path, err)
 			return nil
 		}
 

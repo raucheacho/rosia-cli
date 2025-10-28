@@ -55,3 +55,12 @@ type TrashMetadata struct {
 	DeletedAt    time.Time `json:"deleted_at"`
 	ProfileName  string    `json:"profile_name"`
 }
+
+// TrashItem represents a trashed item with its metadata
+type TrashItem struct {
+	ID           string
+	OriginalPath string
+	Size         int64
+	DeletedAt    time.Time
+	TrashPath    string
+}
