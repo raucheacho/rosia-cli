@@ -1,0 +1,14 @@
+{
+  "name": "Go",
+  "version": "1.0.0",
+  "patterns": [
+    "vendor",
+    "bin"
+  ],
+  "detect": [
+    "go.mod",
+    "go.sum"
+  ],
+  "description": "Cleans Go project vendor dependencies and binaries",
+  "enabled": true
+}

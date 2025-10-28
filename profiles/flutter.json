@@ -1,0 +1,14 @@
+{
+  "name": "Flutter",
+  "version": "1.0.0",
+  "patterns": [
+    "build",
+    ".dart_tool"
+  ],
+  "detect": [
+    "pubspec.yaml",
+    "pubspec.lock"
+  ],
+  "description": "Cleans Flutter project build artifacts and tool caches",
+  "enabled": true
+}

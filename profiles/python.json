@@ -1,0 +1,24 @@
+{
+  "name": "Python",
+  "version": "1.0.0",
+  "patterns": [
+    "venv",
+    "__pycache__",
+    ".pytest_cache",
+    ".tox",
+    "dist",
+    "build",
+    "*.egg-info",
+    ".mypy_cache",
+    ".coverage"
+  ],
+  "detect": [
+    "requirements.txt",
+    "setup.py",
+    "pyproject.toml",
+    "Pipfile",
+    "poetry.lock"
+  ],
+  "description": "Cleans Python project artifacts including virtual environments, caches, and build outputs",
+  "enabled": true
+}

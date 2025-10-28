@@ -1,0 +1,13 @@
+{
+  "name": "Rust",
+  "version": "1.0.0",
+  "patterns": [
+    "target"
+  ],
+  "detect": [
+    "Cargo.toml",
+    "Cargo.lock"
+  ],
+  "description": "Cleans Rust project build artifacts",
+  "enabled": true
+}

@@ -1,0 +1,20 @@
+{
+  "name": "Node.js",
+  "version": "1.0.0",
+  "patterns": [
+    "node_modules",
+    "dist",
+    "build",
+    ".next",
+    ".cache",
+    "coverage"
+  ],
+  "detect": [
+    "package.json",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml"
+  ],
+  "description": "Cleans Node.js project artifacts including dependencies, build outputs, and caches",
+  "enabled": true
+}
