@@ -1,0 +1,49 @@
+baseURL = 'https://rosia.raucheacho.com/'
+languageCode = 'en-us'
+title = 'Rosia CLI Documentation'
+theme = 'ananke'
+
+[params]
+  description = 'Universal, fast, and secure CLI tool for cleaning development dependencies and caches'
+  author = 'raucheacho'
+  github = 'https://github.com/raucheacho/rosia-cli'
+  favicon = ''
+  site_logo = ''
+  featured_image = ''
+  recent_posts_number = 5
+
+[menu]
+  [[menu.main]]
+    name = 'Home'
+    url = '/'
+    weight = 1
+  [[menu.main]]
+    name = 'Getting Started'
+    url = '/getting-started/'
+    weight = 2
+  [[menu.main]]
+    name = 'Commands'
+    url = '/commands/'
+    weight = 3
+  [[menu.main]]
+    name = 'Configuration'
+    url = '/configuration/'
+    weight = 4
+  [[menu.main]]
+    name = 'Plugins'
+    url = '/plugins/'
+    weight = 5
+  [[menu.main]]
+    name = 'FAQ'
+    url = '/faq/'
+    weight = 6
+  [[menu.main]]
+    name = 'GitHub'
+    url = 'https://github.com/raucheacho/rosia-cli'
+    weight = 7
+
+[markup]
+  [markup.highlight]
+    style = 'monokai'
+  [markup.goldmark.renderer]
+    unsafe = true
