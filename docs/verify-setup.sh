@@ -33,12 +33,14 @@ echo ""
 
 # Check theme
 echo "2. Checking theme..."
+THEME_INSTALLED=false
 if [ -d "themes/ananke" ]; then
-    echo -e "${GREEN}✓${NC} Ananke theme is installed"
+    echo -e "${GREEN}✓${NC} Ananke theme is installed locally"
+    THEME_INSTALLED=true
 else
-    echo -e "${RED}✗${NC} Ananke theme is missing"
-    echo "  Clone with: git clone https://github.com/theNewDynamic/gohugo-theme-ananke.git themes/ananke"
-    exit 1
+    echo -e "${YELLOW}⚠${NC} Ananke theme not found locally (will be cloned during GitHub Actions deployment)"
+    echo "  To install locally: git clone https://github.com/theNewDynamic/gohugo-theme-ananke.git themes/ananke"
+    echo "  Note: This is optional for local development only"
 fi
 echo ""
 
@@ -105,32 +107,37 @@ echo ""
 
 # Test build
 echo "6. Testing Hugo build..."
-if hugo --gc --minify > /dev/null 2>&1; then
-    echo -e "${GREEN}✓${NC} Hugo build successful"
-    
-    # Check output
-    if [ -d "public" ]; then
-        echo -e "${GREEN}✓${NC} public/ directory created"
+if [ "$THEME_INSTALLED" = true ]; then
+    if hugo --gc --minify > /dev/null 2>&1; then
+        echo -e "${GREEN}✓${NC} Hugo build successful"
         
-        # Check CNAME in output
-        if [ -f "public/CNAME" ]; then
-            echo -e "${GREEN}✓${NC} CNAME file copied to public/"
+        # Check output
+        if [ -d "public" ]; then
+            echo -e "${GREEN}✓${NC} public/ directory created"
+            
+            # Check CNAME in output
+            if [ -f "public/CNAME" ]; then
+                echo -e "${GREEN}✓${NC} CNAME file copied to public/"
+            else
+                echo -e "${RED}✗${NC} CNAME file not in public/"
+                exit 1
+            fi
+            
+            # Count pages
+            PAGE_COUNT=$(find public -name "*.html" | wc -l | tr -d ' ')
+            echo -e "${GREEN}✓${NC} Generated $PAGE_COUNT HTML pages"
         else
-            echo -e "${RED}✗${NC} CNAME file not in public/"
+            echo -e "${RED}✗${NC} public/ directory not created"
             exit 1
         fi
-        
-        # Count pages
-        PAGE_COUNT=$(find public -name "*.html" | wc -l | tr -d ' ')
-        echo -e "${GREEN}✓${NC} Generated $PAGE_COUNT HTML pages"
     else
-        echo -e "${RED}✗${NC} public/ directory not created"
+        echo -e "${RED}✗${NC} Hugo build failed"
+        echo "  Run 'hugo --gc --minify' to see errors"
         exit 1
     fi
 else
-    echo -e "${RED}✗${NC} Hugo build failed"
-    echo "  Run 'hugo --gc --minify' to see errors"
-    exit 1
+    echo -e "${YELLOW}⚠${NC} Skipping build test (theme not installed locally)"
+    echo "  Build will be tested during GitHub Actions deployment"
 fi
 echo ""
 

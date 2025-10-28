@@ -9,6 +9,17 @@ This directory contains the Hugo-based documentation site for Rosia CLI.
 - Hugo Extended v0.152.2 or later
 - Git
 
+### First Time Setup
+
+Clone the theme (only needed for local development):
+
+```bash
+cd docs
+git clone https://github.com/theNewDynamic/gohugo-theme-ananke.git themes/ananke
+```
+
+**Note:** The theme directory is excluded from git. GitHub Actions will automatically clone it during deployment.
+
 ### Running Locally
 
 ```bash

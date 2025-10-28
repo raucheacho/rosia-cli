@@ -15,6 +15,9 @@ A complete Hugo documentation site for Rosia CLI with:
 ### Configuration
 - **Hugo Config** (`hugo.toml`) - Site configuration with custom domain
 - **Theme** - Ananke theme (clean, responsive design)
+  - Theme is excluded from git (`.gitignore`)
+  - GitHub Actions automatically clones theme during deployment
+  - For local development: `git clone https://github.com/theNewDynamic/gohugo-theme-ananke.git docs/themes/ananke`
 - **Menu** - Navigation menu with all pages
 - **CNAME** - Custom domain configuration for GitHub Pages
 

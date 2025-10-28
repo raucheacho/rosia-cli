@@ -84,6 +84,8 @@ dig rosia.raucheacho.com A
 
 The GitHub Actions workflow is already configured in `.github/workflows/deploy-docs.yml`.
 
+**Note:** The theme directory (`docs/themes/`) is excluded from git (via `.gitignore`). The GitHub Actions workflow will automatically clone the theme during deployment.
+
 Push your changes:
 
 ```bash
