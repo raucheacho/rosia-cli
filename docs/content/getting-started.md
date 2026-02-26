@@ -138,9 +138,11 @@ If you accidentally delete something, restore it from trash:
 ```bash
 # List trashed items
 rosia restore --list
+# or
+rosia trash list
 
 # Restore specific item
-rosia restore 20250428_143022_node_modules
+rosia restore 20250428_143022_node_modules_abcd1234
 ```
 
 ## Configuration
@@ -156,7 +158,6 @@ Create a configuration file at `~/.rosiarc.json` to customize Rosia's behavior:
     "/System"
   ],
   "concurrency": 8,
-  "telemetry_enabled": false
 }
 ```
 
@@ -167,7 +168,6 @@ See the [Configuration](/configuration/) page for detailed options.
 - Learn about all available [Commands](/commands/)
 - Customize [Configuration](/configuration/) for your workflow
 - Explore [Plugins](/plugins/) to extend functionality
-- Check [Statistics](/commands/#rosia-stats) to track your disk space savings
 
 ## Common Workflows
 
@@ -193,7 +193,6 @@ rosia scan ~/projects --dry-run
 ### View cleaning history
 
 ```bash
-rosia stats
 ```
 
 ## Troubleshooting
@@ -204,10 +203,11 @@ If you encounter permission errors, ensure you have write access to the director
 
 ### Trash Directory Full
 
-By default, trash items are kept for 3 days. If your trash directory grows too large, you can:
+By default, trash items are kept for 3 days and are automatically cleaned on startup. If your trash directory grows too large, you can:
 
 1. Reduce retention period: `rosia config set trash_retention_days 1`
-2. Manually clean trash: `rm -rf ~/.rosia/trash/*`
+2. Clean old items: `rosia trash clean`
+3. Clean all items immediately: `rosia trash clean --all`
 
 ### Slow Scanning
 

@@ -56,24 +56,15 @@ type Profile struct {
 
 // Config represents user configuration loaded from ~/.rosiarc.json.
 //
-// The configuration file allows users to customize Rosia's behavior including
-// trash retention, enabled profiles, ignored paths, and performance settings.
-//
 // Example configuration:
 //
 //	{
 //	  "trash_retention_days": 3,
-//	  "profiles": ["node", "python", "rust"],
-//	  "ignore_paths": ["/usr/local"],
-//	  "concurrency": 8
+//	  "ignore_paths": ["/usr/local"]
 //	}
 type Config struct {
 	TrashRetentionDays int      `json:"trash_retention_days"` // Days to keep items in trash
-	Profiles           []string `json:"profiles"`             // Enabled profile names
 	IgnorePaths        []string `json:"ignore_paths"`         // Paths to exclude from scanning
-	Plugins            []string `json:"plugins"`              // Enabled plugin names
-	Concurrency        int      `json:"concurrency"`          // Worker pool size (0 = auto)
-	TelemetryEnabled   bool     `json:"telemetry_enabled"`    // Enable anonymous statistics
 }
 
 // CleanReport summarizes the results of a cleaning operation.
@@ -95,30 +86,6 @@ type CleanReport struct {
 type CleanError struct {
 	Target Target // The target that failed to clean
 	Error  error  // The error that occurred
-}
-
-// TrashMetadata stores information about trashed items for restoration.
-//
-// Metadata is persisted as JSON alongside trashed items in ~/.rosia/trash/
-// and enables restoration to the original location.
-type TrashMetadata struct {
-	ID           string    `json:"id"`            // Unique identifier (timestamp-based)
-	OriginalPath string    `json:"original_path"` // Original location before deletion
-	Size         int64     `json:"size"`          // Size in bytes
-	DeletedAt    time.Time `json:"deleted_at"`    // Deletion timestamp
-	ProfileName  string    `json:"profile_name"`  // Profile that matched this item
-}
-
-// TrashItem represents a trashed item with its metadata and current location.
-//
-// TrashItems are returned by the trash system's List() method and include
-// both the metadata and the current trash path.
-type TrashItem struct {
-	ID           string    // Unique identifier
-	OriginalPath string    // Original location
-	Size         int64     // Size in bytes
-	DeletedAt    time.Time // Deletion timestamp
-	TrashPath    string    // Current location in trash
 }
 
 // ErrPermissionDenied indicates insufficient permissions to access or modify a path.

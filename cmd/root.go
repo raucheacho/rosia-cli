@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/raucheacho/rosia-cli/internal/config"
-	"github.com/raucheacho/rosia-cli/internal/plugins"
 	"github.com/raucheacho/rosia-cli/internal/profiles"
 	"github.com/raucheacho/rosia-cli/pkg/logger"
 	"github.com/spf13/cobra"
@@ -24,10 +23,9 @@ var (
 	date    = "unknown"
 
 	// Global components (initialized once)
-	globalConfig         *config.Config
-	globalConfigManager  *config.Manager
-	globalProfileLoader  *profiles.Loader
-	globalPluginRegistry plugins.PluginRegistry
+	globalConfig        *config.Config
+	globalConfigManager *config.Manager
+	globalProfileLoader *profiles.Loader
 )
 
 // rootCmd represents the base command
@@ -51,7 +49,6 @@ Features:
   • Fast concurrent scanning with configurable worker pools
   • Safe deletion with trash system and restoration capability
   • Interactive TUI for visual selection
-  • Extensible plugin system
   • Cross-platform support (Linux, macOS, Windows)
 
 Common Workflows:
@@ -64,9 +61,6 @@ Common Workflows:
 
   3. Restore accidentally deleted files:
      $ rosia restore <trash-id>
-
-  4. View statistics:
-     $ rosia stats
 
 For more information, visit: https://github.com/raucheacho/rosia-cli`,
 	SilenceUsage: true,
@@ -181,27 +175,6 @@ func initComponents() {
 		}
 	}
 
-	// Initialize plugin registry
-	globalPluginRegistry = plugins.NewRegistry()
-
-	// Load plugins if configured
-	if len(globalConfig.Plugins) > 0 {
-		pluginsDir := findPluginsDirectory()
-		if pluginsDir != "" {
-			err := globalPluginRegistry.LoadAll(pluginsDir)
-			if err != nil {
-				logger.Warn("Failed to load plugins: %v", err)
-			} else {
-				pluginList := globalPluginRegistry.List()
-				logger.Debug("Loaded %d plugin(s)", len(pluginList))
-				if verbose {
-					for _, p := range pluginList {
-						logger.Debug("  - %s (v%s): %s", p.Name(), p.Version(), p.Description())
-					}
-				}
-			}
-		}
-	}
 }
 
 // findProfilesDirectory locates the profiles directory
@@ -234,45 +207,15 @@ func findProfilesDirectory() string {
 	return "profiles"
 }
 
-// findPluginsDirectory locates the plugins directory
-func findPluginsDirectory() string {
-	// Try home directory first
-	homeDir, err := os.UserHomeDir()
-	if err == nil {
-		pluginsDir := filepath.Join(homeDir, ".rosia", "plugins")
-		if _, err := os.Stat(pluginsDir); err == nil {
-			return pluginsDir
-		}
-	}
-
-	// Try relative to executable
-	execPath, err := os.Executable()
-	if err == nil {
-		execDir := filepath.Dir(execPath)
-		pluginsDir := filepath.Join(execDir, "plugins")
-		if _, err := os.Stat(pluginsDir); err == nil {
-			return pluginsDir
-		}
-	}
-
-	return ""
-}
-
 // GetGlobalConfig returns the global configuration
 func GetGlobalConfig() *config.Config {
 	if globalConfig == nil {
-		// Return a default config if not initialized
 		if globalConfigManager != nil {
 			return globalConfigManager.GetDefault()
 		}
-		// Fallback to hardcoded defaults
 		return &config.Config{
 			TrashRetentionDays: 3,
-			Profiles:           []string{"node", "python", "rust", "flutter", "go"},
 			IgnorePaths:        []string{},
-			Plugins:            []string{},
-			Concurrency:        0,
-			TelemetryEnabled:   false,
 		}
 	}
 	return globalConfig
@@ -281,11 +224,6 @@ func GetGlobalConfig() *config.Config {
 // GetGlobalProfileLoader returns the global profile loader
 func GetGlobalProfileLoader() *profiles.Loader {
 	return globalProfileLoader
-}
-
-// GetGlobalPluginRegistry returns the global plugin registry
-func GetGlobalPluginRegistry() plugins.PluginRegistry {
-	return globalPluginRegistry
 }
 
 // versionCmd displays version information

@@ -20,17 +20,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 )
 
 // Config represents user configuration loaded from ~/.rosiarc.json.
 type Config struct {
 	TrashRetentionDays int      `json:"trash_retention_days"` // Days to keep items in trash
-	Profiles           []string `json:"profiles"`             // Enabled profile names
 	IgnorePaths        []string `json:"ignore_paths"`         // Paths to exclude from scanning
-	Plugins            []string `json:"plugins"`              // Enabled plugin names
-	Concurrency        int      `json:"concurrency"`          // Worker pool size (0 = auto)
-	TelemetryEnabled   bool     `json:"telemetry_enabled"`    // Enable anonymous statistics
 }
 
 // Manager handles configuration loading and saving.
@@ -117,11 +112,7 @@ func (m *Manager) Save(config *Config) error {
 func (m *Manager) GetDefault() *Config {
 	return &Config{
 		TrashRetentionDays: 3,
-		Profiles:           []string{"node", "python", "rust", "flutter", "go"},
 		IgnorePaths:        []string{},
-		Plugins:            []string{},
-		Concurrency:        0, // 0 means auto-detect (NumCPU * 2)
-		TelemetryEnabled:   false,
 	}
 }
 
@@ -130,30 +121,11 @@ func (m *Manager) GetConfigPath() string {
 	return m.configPath
 }
 
-// Validate validates the configuration and applies defaults
+// Validate validates the configuration
 func (m *Manager) Validate(config *Config) error {
-	// Validate retention days > 0
 	if config.TrashRetentionDays <= 0 {
 		return fmt.Errorf("trash_retention_days must be greater than 0, got %d", config.TrashRetentionDays)
 	}
-
-	// Validate ignore paths are absolute
-	for _, path := range config.IgnorePaths {
-		if !filepath.IsAbs(path) {
-			return fmt.Errorf("ignore path must be absolute: %s", path)
-		}
-	}
-
-	// Set concurrency to NumCPU * 2 if 0
-	if config.Concurrency == 0 {
-		config.Concurrency = runtime.NumCPU() * 2
-	}
-
-	// Validate concurrency is positive
-	if config.Concurrency < 0 {
-		return fmt.Errorf("concurrency must be non-negative, got %d", config.Concurrency)
-	}
-
 	return nil
 }
 

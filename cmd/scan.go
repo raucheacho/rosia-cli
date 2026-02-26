@@ -9,7 +9,6 @@ import (
 
 	"github.com/raucheacho/rosia-cli/internal/scanner"
 	"github.com/raucheacho/rosia-cli/pkg/logger"
-	"github.com/raucheacho/rosia-cli/pkg/progress"
 	"github.com/raucheacho/rosia-cli/pkg/types"
 	"github.com/spf13/cobra"
 )
@@ -89,24 +88,12 @@ func runScan(cmd *cobra.Command, args []string) error {
 	// Create scanner
 	scan := scanner.NewScanner(profileLoader)
 
-	// Initialize telemetry if enabled
-	if cfg.TelemetryEnabled {
-		statsPath, err := getTelemetryStatsPath()
-		if err == nil {
-			if store, err := initTelemetryStore(statsPath); err == nil {
-				scan.SetTelemetryStore(store)
-				logger.Debug("Telemetry enabled for scanner")
-			}
-		}
-	}
-
 	// Prepare scan options
 	opts := scanner.ScanOptions{
 		MaxDepth:      scanDepth,
 		IncludeHidden: scanIncludeHidden,
 		DryRun:        scanDryRun,
 		IgnorePaths:   cfg.IgnorePaths,
-		Concurrency:   cfg.Concurrency,
 	}
 
 	// Resolve and validate paths
@@ -145,9 +132,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 func collectTargetsWithProgress(targetChan <-chan types.Target, errorChan <-chan error) []types.Target {
 	targets := make([]types.Target, 0)
 
-	// Create a simple progress indicator
 	fmt.Println("Scanning directories...")
-	bar := progress.NewSimpleBar(100, "Progress", os.Stdout)
 
 	targetCount := 0
 	errorCount := 0
@@ -166,9 +151,8 @@ func collectTargetsWithProgress(targetChan <-chan types.Target, errorChan <-chan
 			targets = append(targets, target)
 			targetCount++
 
-			// Update progress bar label with current count
-			bar.SetLabel(fmt.Sprintf("Found %d targets", targetCount))
-			bar.IncrementBy(1)
+			// Print progress
+			fmt.Printf("\rFound %d targets...", targetCount)
 
 		case err, ok := <-errorChan:
 			if !ok {
@@ -185,7 +169,7 @@ func collectTargetsWithProgress(targetChan <-chan types.Target, errorChan <-chan
 		}
 	}
 
-	bar.Finish()
+	fmt.Println() // Newline after progress
 
 	if errorCount > 0 {
 		logger.Warn("Completed with %d error(s)", errorCount)

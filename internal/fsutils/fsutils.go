@@ -177,7 +177,7 @@ func getWindowsAttributes(path string) (uint32, error) {
 	// This is a placeholder - full implementation would use:
 	// syscall.GetFileAttributes on Windows
 	// For now, return 0 to indicate no special attributes
-	return 0, fmt.Errorf("Windows attribute checking not fully implemented")
+	return 0, fmt.Errorf("windows attribute checking not fully implemented")
 }
 
 // EnsureDir ensures a directory exists, creating it if necessary

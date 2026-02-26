@@ -1,242 +1,173 @@
-// Package trash provides trash system functionality for safe file deletion.
+// Package trash provides simple trash functionality for safe file deletion.
 //
-// The trash system moves deleted files to a temporary location (~/.rosia/trash/)
-// before permanent removal, enabling restoration if needed. It maintains metadata
-// for each trashed item and supports automatic cleanup based on retention periods.
-//
-// Example usage:
-//
-//	system, err := trash.NewSystem("~/.rosia/trash")
-//	id, err := system.Move(target)
-//	// Later, if needed:
-//	err = system.Restore(id)
+// The trash system moves deleted files to ~/.rosia/trash/ before permanent removal.
+// Items are stored with descriptive names containing timestamp and original path.
 package trash
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/raucheacho/rosia-cli/pkg/types"
 )
 
-// System manages the trash directory and operations.
-//
-// The System handles moving files to trash, restoring them, listing trashed items,
-// and automatic cleanup of old items based on retention policies.
+// System manages the trash directory.
 type System struct {
 	trashDir string
 }
 
-// NewSystem creates a new trash system with the specified trash directory
+// NewSystem creates a new trash system.
 func NewSystem(trashDir string) (*System, error) {
-	// Ensure trash directory exists
 	if err := os.MkdirAll(trashDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create trash directory: %w", err)
 	}
-
-	return &System{
-		trashDir: trashDir,
-	}, nil
+	return &System{trashDir: trashDir}, nil
 }
 
-// NewDefaultSystem creates a new trash system with the default location
-// Uses platform-specific paths (XDG on Linux, ~/Library on macOS, %LOCALAPPDATA% on Windows)
+// NewDefaultSystem creates a trash system with default location.
 func NewDefaultSystem() (*System, error) {
-	trashDir, err := getDefaultTrashDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get default trash directory: %w", err)
-	}
-	return NewSystem(trashDir)
-}
-
-// getDefaultTrashDir returns the platform-specific default trash directory
-func getDefaultTrashDir() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("failed to get user home directory: %w", err)
+		return nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
-
-	// For backward compatibility, keep using ~/.rosia/trash
-	// In the future, this could use fsutils.GetTrashDir() for platform-specific paths
-	trashDir := filepath.Join(homeDir, ".rosia", "trash")
-	return trashDir, nil
+	return NewSystem(filepath.Join(homeDir, ".rosia", "trash"))
 }
 
-// Move relocates a target to the trash with a timestamp-based ID
+// Move relocates a target to trash.
+// Returns the trash item name.
 func (s *System) Move(target types.Target) (string, error) {
-	// Generate unique ID: YYYYMMDD_HHMMSS_<basename>
+	// Create descriptive name: YYYYMMDD_HHMMSS_basename
 	timestamp := time.Now().Format("20060102_150405")
 	basename := filepath.Base(target.Path)
-	id := fmt.Sprintf("%s_%s", timestamp, basename)
-
-	// Create trash item directory
-	itemDir := filepath.Join(s.trashDir, id)
-	if err := os.MkdirAll(itemDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create trash item directory: %w", err)
+	itemName := fmt.Sprintf("%s_%s_%d", timestamp, basename, time.Now().UnixNano())
+	
+	// Replace problematic characters
+	itemName = strings.ReplaceAll(itemName, "/", "_")
+	itemName = strings.ReplaceAll(itemName, "\\", "_")
+	itemName = strings.ReplaceAll(itemName, " ", "_")
+	
+	trashPath := filepath.Join(s.trashDir, itemName)
+	
+	if err := os.Rename(target.Path, trashPath); err != nil {
+		return "", fmt.Errorf("failed to move to trash: %w", err)
 	}
-
-	// Create metadata
-	metadata := types.TrashMetadata{
-		ID:           id,
-		OriginalPath: target.Path,
-		Size:         target.Size,
-		DeletedAt:    time.Now(),
-		ProfileName:  target.ProfileName,
+	
+	// Store original path in a sidecar file
+	pathFile := trashPath + ".path"
+	if err := os.WriteFile(pathFile, []byte(target.Path), 0644); err != nil {
+		// If we can't write the path file, try to move back and return error
+		os.Rename(trashPath, target.Path)
+		return "", fmt.Errorf("failed to store original path: %w", err)
 	}
-
-	// Write metadata.json
-	metadataPath := filepath.Join(itemDir, "metadata.json")
-	metadataData, err := json.MarshalIndent(metadata, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal metadata: %w", err)
-	}
-
-	if err := os.WriteFile(metadataPath, metadataData, 0644); err != nil {
-		return "", fmt.Errorf("failed to write metadata: %w", err)
-	}
-
-	// Move the actual content
-	contentPath := filepath.Join(itemDir, "content")
-	if err := os.Rename(target.Path, contentPath); err != nil {
-		// Clean up metadata if move fails
-		os.RemoveAll(itemDir)
-		return "", fmt.Errorf("failed to move target to trash: %w", err)
-	}
-
-	return id, nil
+	
+	return itemName, nil
 }
 
-// Restore moves an item back to its original location
-func (s *System) Restore(id string) error {
-	// Get metadata to find original path
-	metadata, err := s.GetMetadata(id)
+// Restore moves an item back to its original location.
+func (s *System) Restore(itemName string) error {
+	trashPath := filepath.Join(s.trashDir, itemName)
+	
+	// Read original path from sidecar file
+	pathFile := trashPath + ".path"
+	originalPathBytes, err := os.ReadFile(pathFile)
+	var originalPath string
 	if err != nil {
-		return fmt.Errorf("failed to get metadata for trash item %s: %w", id, err)
+		// Fallback: restore to current directory with original name (without timestamp prefix)
+		originalPath = s.extractBaseName(itemName)
+	} else {
+		originalPath = string(originalPathBytes)
 	}
-
-	// Check if original path already exists (conflict)
-	if _, err := os.Stat(metadata.OriginalPath); err == nil {
-		return fmt.Errorf("cannot restore trash item %s: path already exists: %s", id, metadata.OriginalPath)
+	
+	// Check if destination exists
+	if _, err := os.Stat(originalPath); err == nil {
+		return fmt.Errorf("cannot restore: path already exists: %s", originalPath)
 	}
-
+	
 	// Ensure parent directory exists
-	parentDir := filepath.Dir(metadata.OriginalPath)
+	parentDir := filepath.Dir(originalPath)
 	if err := os.MkdirAll(parentDir, 0755); err != nil {
-		if os.IsPermission(err) {
-			return types.ErrPermissionDenied{Path: parentDir}
-		}
-		return fmt.Errorf("failed to create parent directory %s for restore: %w", parentDir, err)
+		return fmt.Errorf("failed to create parent directory: %w", err)
 	}
-
-	// Move content back to original location
-	itemDir := filepath.Join(s.trashDir, id)
-	contentPath := filepath.Join(itemDir, "content")
-
-	if err := os.Rename(contentPath, metadata.OriginalPath); err != nil {
-		if os.IsPermission(err) {
-			return types.ErrPermissionDenied{Path: metadata.OriginalPath}
-		}
-		return fmt.Errorf("failed to restore item %s to %s: %w", id, metadata.OriginalPath, err)
+	
+	// Move back
+	if err := os.Rename(trashPath, originalPath); err != nil {
+		return fmt.Errorf("failed to restore: %w", err)
 	}
-
-	// Remove trash item directory
-	if err := os.RemoveAll(itemDir); err != nil {
-		// Log warning but don't fail - the item was restored successfully
-		fmt.Fprintf(os.Stderr, "warning: failed to clean up trash directory %s: %v\n", itemDir, err)
-	}
-
+	
+	// Clean up sidecar file
+	os.Remove(pathFile)
+	
 	return nil
 }
 
-// GetMetadata reads and returns the metadata for a trashed item
-func (s *System) GetMetadata(id string) (*types.TrashMetadata, error) {
-	metadataPath := filepath.Join(s.trashDir, id, "metadata.json")
-
-	data, err := os.ReadFile(metadataPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, types.ErrPathNotFound{Path: metadataPath}
-		}
-		if os.IsPermission(err) {
-			return nil, types.ErrPermissionDenied{Path: metadataPath}
-		}
-		return nil, fmt.Errorf("failed to read metadata for trash item %s: %w", id, err)
-	}
-
-	var metadata types.TrashMetadata
-	if err := json.Unmarshal(data, &metadata); err != nil {
-		return nil, fmt.Errorf("failed to parse metadata for trash item %s: %w", id, err)
-	}
-
-	return &metadata, nil
-}
-
-// List returns all trashed items
-func (s *System) List() ([]types.TrashItem, error) {
+// List returns all trashed items.
+func (s *System) List() ([]TrashItem, error) {
 	entries, err := os.ReadDir(s.trashDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []types.TrashItem{}, nil
+			return []TrashItem{}, nil
 		}
-		return nil, fmt.Errorf("failed to read trash directory: %w", err)
+		return nil, err
 	}
-
-	var items []types.TrashItem
+	
+	var items []TrashItem
 	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
+		if entry.IsDir() {
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			items = append(items, TrashItem{
+				Name:      entry.Name(),
+				DeletedAt: info.ModTime(),
+			})
 		}
-
-		id := entry.Name()
-		metadata, err := s.GetMetadata(id)
-		if err != nil {
-			// Skip items with invalid metadata
-			fmt.Fprintf(os.Stderr, "warning: skipping item with invalid metadata: %s: %v\n", id, err)
-			continue
-		}
-
-		items = append(items, types.TrashItem{
-			ID:           metadata.ID,
-			OriginalPath: metadata.OriginalPath,
-			Size:         metadata.Size,
-			DeletedAt:    metadata.DeletedAt,
-			TrashPath:    filepath.Join(s.trashDir, id),
-		})
 	}
-
+	
 	return items, nil
 }
 
-// Clean removes trashed items older than the specified retention period
+// Clean removes items older than retention period.
 func (s *System) Clean(retentionPeriod time.Duration) error {
 	items, err := s.List()
 	if err != nil {
-		return fmt.Errorf("failed to list trash items: %w", err)
+		return err
 	}
-
-	cutoffTime := time.Now().Add(-retentionPeriod)
-	var errors []error
-
+	
+	cutoff := time.Now().Add(-retentionPeriod)
 	for _, item := range items {
-		if item.DeletedAt.Before(cutoffTime) {
-			itemDir := filepath.Join(s.trashDir, item.ID)
-			if err := os.RemoveAll(itemDir); err != nil {
-				errors = append(errors, fmt.Errorf("failed to remove %s: %w", item.ID, err))
-			}
+		if item.DeletedAt.Before(cutoff) {
+			path := filepath.Join(s.trashDir, item.Name)
+			os.RemoveAll(path)
+			// Also remove sidecar file if exists
+			os.Remove(path + ".path")
 		}
 	}
-
-	if len(errors) > 0 {
-		return fmt.Errorf("failed to clean some items: %v", errors)
-	}
-
+	
 	return nil
 }
 
-// GetTrashDir returns the trash directory path
+// GetTrashDir returns the trash directory path.
 func (s *System) GetTrashDir() string {
 	return s.trashDir
+}
+
+// TrashItem represents a trashed item.
+type TrashItem struct {
+	Name      string
+	DeletedAt time.Time
+}
+
+// extractBaseName extracts the original basename from trash item name.
+// Format: YYYYMMDD_HHMMSS_basename_unixnano
+func (s *System) extractBaseName(itemName string) string {
+	parts := strings.Split(itemName, "_")
+	if len(parts) >= 3 {
+		// Return third part (basename)
+		return parts[2]
+	}
+	return itemName
 }

@@ -175,31 +175,6 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 		}
 		cfg.TrashRetentionDays = days
 
-	case "concurrency":
-		concurrency, err := strconv.Atoi(value)
-		if err != nil {
-			return fmt.Errorf("invalid value for concurrency: must be an integer")
-		}
-		if concurrency < 0 {
-			return fmt.Errorf("concurrency must be non-negative")
-		}
-		cfg.Concurrency = concurrency
-
-	case "telemetry_enabled":
-		enabled, err := strconv.ParseBool(value)
-		if err != nil {
-			return fmt.Errorf("invalid value for telemetry_enabled: must be true or false")
-		}
-		cfg.TelemetryEnabled = enabled
-
-	case "profiles":
-		// Parse comma-separated list
-		profiles := strings.Split(value, ",")
-		for i := range profiles {
-			profiles[i] = strings.TrimSpace(profiles[i])
-		}
-		cfg.Profiles = profiles
-
 	case "ignore_paths":
 		// Parse comma-separated list
 		paths := strings.Split(value, ",")
@@ -207,14 +182,6 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 			paths[i] = strings.TrimSpace(paths[i])
 		}
 		cfg.IgnorePaths = paths
-
-	case "plugins":
-		// Parse comma-separated list
-		plugins := strings.Split(value, ",")
-		for i := range plugins {
-			plugins[i] = strings.TrimSpace(plugins[i])
-		}
-		cfg.Plugins = plugins
 
 	default:
 		return fmt.Errorf("unknown configuration key: %s", key)

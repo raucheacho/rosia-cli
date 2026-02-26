@@ -21,8 +21,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/raucheacho/rosia-cli/internal/plugins"
-	"github.com/raucheacho/rosia-cli/internal/telemetry"
 	"github.com/raucheacho/rosia-cli/internal/trash"
 	"github.com/raucheacho/rosia-cli/pkg/logger"
 	"github.com/raucheacho/rosia-cli/pkg/types"
@@ -34,9 +32,7 @@ import (
 // for potential restoration, and processes deletions concurrently with error
 // isolation to ensure one failure doesn't stop the entire operation.
 type Cleaner struct {
-	trashSystem    *trash.System            // Manages trash operations
-	telemetryStore telemetry.TelemetryStore // Records cleaning statistics
-	pluginRegistry plugins.PluginRegistry   // Manages loaded plugins
+	trashSystem *trash.System // Manages trash operations
 }
 
 // CleanOptions configures the cleaning operation.
@@ -58,21 +54,7 @@ type CleanProgress struct {
 
 // New creates a new Cleaner with the specified trash system
 func New(trashSystem *trash.System) *Cleaner {
-	return &Cleaner{
-		trashSystem:    trashSystem,
-		telemetryStore: nil,
-		pluginRegistry: nil,
-	}
-}
-
-// SetTelemetryStore sets the telemetry store for the cleaner
-func (c *Cleaner) SetTelemetryStore(store telemetry.TelemetryStore) {
-	c.telemetryStore = store
-}
-
-// SetPluginRegistry sets the plugin registry for the cleaner
-func (c *Cleaner) SetPluginRegistry(registry plugins.PluginRegistry) {
-	c.pluginRegistry = registry
+	return &Cleaner{trashSystem: trashSystem}
 }
 
 // Clean safely deletes targets with confirmation and trash backup
@@ -144,80 +126,7 @@ func (c *Cleaner) Clean(ctx context.Context, targets []types.Target, opts CleanO
 	report.Duration = time.Since(startTime)
 	logger.Info("Clean operation completed: %d files deleted, %d errors", report.FilesDeleted, len(report.Errors))
 
-	// Call plugin.Clean() for plugin-specific cleanup
-	if c.pluginRegistry != nil {
-		if err := c.cleanPlugins(ctx, targets); err != nil {
-			logger.Warn("Plugin clean failed: %v", err)
-			// Don't fail the entire operation if plugins fail
-		}
-	}
-
-	// Record clean events in telemetry
-	if c.telemetryStore != nil {
-		c.recordCleanEvents(targets, report)
-	}
-
 	return report, nil
-}
-
-// recordCleanEvents records clean events in telemetry for each profile type
-func (c *Cleaner) recordCleanEvents(targets []types.Target, report *types.CleanReport) {
-	// Group targets by profile to record aggregate events
-	profileSizes := make(map[string]int64)
-	for _, target := range targets {
-		// Only count successfully cleaned targets
-		wasError := false
-		for _, cleanErr := range report.Errors {
-			if cleanErr.Target.Path == target.Path {
-				wasError = true
-				break
-			}
-		}
-		if !wasError {
-			profileSizes[target.ProfileName] += target.Size
-		}
-	}
-
-	// Record an event for each profile type
-	for profileName, size := range profileSizes {
-		event := telemetry.TelemetryEvent{
-			Type:      "clean",
-			Timestamp: time.Now(),
-			Data: map[string]interface{}{
-				"size":     size,
-				"profile":  profileName,
-				"duration": report.Duration.Seconds(),
-			},
-		}
-
-		if err := c.telemetryStore.Record(event); err != nil {
-			logger.Warn("Failed to record clean telemetry for profile %s: %v", profileName, err)
-		}
-	}
-}
-
-// cleanPlugins calls Clean() on all registered plugins
-func (c *Cleaner) cleanPlugins(ctx context.Context, targets []types.Target) error {
-	allPlugins := c.pluginRegistry.List()
-	if len(allPlugins) == 0 {
-		return nil
-	}
-
-	logger.Debug("Cleaning with %d plugins", len(allPlugins))
-
-	for _, plugin := range allPlugins {
-		logger.Debug("Calling plugin.Clean() for: %s", plugin.Name())
-
-		if err := plugin.Clean(ctx, targets); err != nil {
-			logger.Warn("Plugin %s clean failed: %v", plugin.Name(), err)
-			// Continue with other plugins
-			continue
-		}
-
-		logger.Debug("Plugin %s clean completed", plugin.Name())
-	}
-
-	return nil
 }
 
 // canDelete checks if the target can be safely deleted

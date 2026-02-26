@@ -261,6 +261,75 @@ Restoring 20250428_143022_node_modules...
 
 ---
 
+## rosia trash
+
+Manage the trash directory where cleaned files are stored.
+
+### Usage
+
+```bash
+rosia trash <subcommand> [flags]
+```
+
+### Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | List all items in trash |
+| `clean` | Clean old items from trash |
+
+### Examples
+
+```bash
+# List all items in trash
+rosia trash list
+
+# Clean items older than retention period
+rosia trash clean
+
+# Clean all items immediately (permanent deletion)
+rosia trash clean --all
+```
+
+### Flags
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--all` | | bool | false | Remove all items regardless of retention period |
+
+### List Output
+
+```bash
+rosia trash list
+```
+
+```
+Trash Directory: /Users/you/.rosia/trash
+Found 3 trashed item(s):
+
+TRASH ID                                 ORIGINAL PATH                            SIZE            DELETED AT
+------------------------------------------------------------------------------------------------------------------------
+20250428_143022_node_modules_abcd1234    /Users/you/app/node_modules              450 MB          2025-04-28 14:30:22
+20250428_143045_target_efgh5678          /Users/you/api/target                    1.2 GB          2025-04-28 14:30:45
+20250428_143100_dist_ijkl9012            /Users/you/web/dist                      25 MB           2025-04-28 14:31:00
+------------------------------------------------------------------------------------------------------------------------
+Total: 1.67 GB across 3 item(s)
+
+To restore an item, use: rosia restore <trash-id>
+```
+
+### Clean Output
+
+```bash
+rosia trash clean --all
+```
+
+```
+✓ Removed all 3 item(s) from trash
+```
+
+---
+
 ## rosia config
 
 Manage configuration settings.
@@ -324,115 +393,6 @@ Reset configuration to defaults:
 
 ```bash
 rosia config reset
-```
-
----
-
-## rosia stats
-
-Display cleaning statistics and history.
-
-### Usage
-
-```bash
-rosia stats [flags]
-```
-
-### Examples
-
-```bash
-# Show statistics
-rosia stats
-
-# Show with verbose details
-rosia stats --verbose
-```
-
-### Output
-
-```
-Rosia Statistics
-─────────────────────────────────────────────────────
-
-Total Scans:           42
-Total Cleaned:         15.7 GB
-Total Files Deleted:   1,234
-
-Average Size by Type:
-  node_modules:        500 MB
-  target:              100 MB
-  dist:                10 MB
-  build:               50 MB
-  __pycache__:         5 MB
-
-Last Scan:             2025-04-28 14:30:22
-Last Clean:            2025-04-28 14:35:10
-
-Disk Space Saved:      15.7 GB
-```
-
----
-
-## rosia plugin
-
-Manage plugins.
-
-### Usage
-
-```bash
-rosia plugin <subcommand> [args] [flags]
-```
-
-### Subcommands
-
-#### list
-
-List all loaded plugins:
-
-```bash
-rosia plugin list
-```
-
-Output:
-
-```
-Loaded Plugins:
-┌─────────────────┬─────────┬──────────────────────────────────┐
-│ Name            │ Version │ Description                      │
-├─────────────────┼─────────┼──────────────────────────────────┤
-│ rosia-docker    │ 1.0.0   │ Clean Docker images and volumes  │
-│ rosia-xcode     │ 1.2.0   │ Clean Xcode derived data         │
-└─────────────────┴─────────┴──────────────────────────────────┘
-```
-
-#### info
-
-Show detailed information about a plugin:
-
-```bash
-rosia plugin info <plugin-name>
-```
-
-Example:
-
-```bash
-rosia plugin info rosia-docker
-```
-
-Output:
-
-```
-Plugin: rosia-docker
-Version: 1.0.0
-Description: Clean Docker images and volumes
-
-Capabilities:
-  - Scan for dangling Docker images
-  - Clean unused Docker volumes
-  - Remove stopped containers
-
-Author: raucheacho
-License: MIT
 ```
 
 ---

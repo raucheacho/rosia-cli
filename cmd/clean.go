@@ -11,7 +11,6 @@ import (
 
 	"github.com/raucheacho/rosia-cli/internal/cleaner"
 	"github.com/raucheacho/rosia-cli/internal/scanner"
-	"github.com/raucheacho/rosia-cli/internal/telemetry"
 	"github.com/raucheacho/rosia-cli/internal/trash"
 	"github.com/raucheacho/rosia-cli/pkg/logger"
 	"github.com/raucheacho/rosia-cli/pkg/progress"
@@ -110,25 +109,11 @@ func runClean(cmd *cobra.Command, args []string) error {
 	// Create scanner
 	scan := scanner.NewScanner(profileLoader)
 
-	// Initialize telemetry if enabled
-	var telemetryStore telemetry.TelemetryStore
-	if cfg.TelemetryEnabled {
-		statsPath, err := getTelemetryStatsPath()
-		if err == nil {
-			if store, err := initTelemetryStore(statsPath); err == nil {
-				telemetryStore = store
-				scan.SetTelemetryStore(store)
-				logger.Debug("Telemetry enabled for scanner")
-			}
-		}
-	}
-
 	// Prepare scan options
 	opts := scanner.ScanOptions{
 		MaxDepth:      cleanDepth,
 		IncludeHidden: cleanIncludeHidden,
 		IgnorePaths:   cfg.IgnorePaths,
-		Concurrency:   cfg.Concurrency,
 	}
 
 	// Resolve and validate paths
@@ -201,17 +186,10 @@ func runClean(cmd *cobra.Command, args []string) error {
 	// Create cleaner
 	clean := cleaner.New(trashSystem)
 
-	// Set telemetry store if enabled
-	if telemetryStore != nil {
-		clean.SetTelemetryStore(telemetryStore)
-		logger.Debug("Telemetry enabled for cleaner")
-	}
-
 	// Prepare clean options
 	cleanOpts := cleaner.CleanOptions{
 		SkipConfirmation: cleanYes,
 		UseTrash:         !cleanNoTrash,
-		Concurrency:      cfg.Concurrency,
 	}
 
 	// Perform cleaning with progress
@@ -234,11 +212,9 @@ func runClean(cmd *cobra.Command, args []string) error {
 
 	if len(report.Errors) > 0 {
 		logger.Warn("Clean completed with %d errors", len(report.Errors))
-		// Return error if all targets failed
 		if report.FilesDeleted == 0 {
 			return fmt.Errorf("clean failed: all targets failed to clean")
 		}
-		// Partial success - don't return error
 	} else {
 		logger.Info("Clean completed successfully")
 	}

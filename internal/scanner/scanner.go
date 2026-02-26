@@ -24,24 +24,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/raucheacho/rosia-cli/internal/plugins"
 	"github.com/raucheacho/rosia-cli/internal/profiles"
 	"github.com/raucheacho/rosia-cli/internal/sizecalc"
-	"github.com/raucheacho/rosia-cli/internal/telemetry"
 	"github.com/raucheacho/rosia-cli/pkg/logger"
 	"github.com/raucheacho/rosia-cli/pkg/types"
 )
 
 // Scanner handles directory scanning and target detection.
-//
-// The Scanner traverses directories recursively, matches files against loaded profiles,
-// and calculates sizes for detected targets. It integrates with the plugin system to
-// allow custom scanning logic.
 type Scanner struct {
-	profileLoader  *profiles.Loader         // Loads and matches profiles
-	sizeCalc       *sizecalc.SizeCalc       // Calculates directory sizes
-	telemetryStore telemetry.TelemetryStore // Records scan statistics
-	pluginRegistry plugins.PluginRegistry   // Manages loaded plugins
+	profileLoader *profiles.Loader   // Loads and matches profiles
+	sizeCalc      *sizecalc.SizeCalc // Calculates directory sizes
 }
 
 // ScanOptions configures the scanning behavior.
@@ -59,31 +51,9 @@ type ScanOptions struct {
 // NewScanner creates a new scanner with the given profile loader
 func NewScanner(loader *profiles.Loader) *Scanner {
 	return &Scanner{
-		profileLoader:  loader,
-		sizeCalc:       sizecalc.NewSizeCalc(0), // 0 means auto-detect concurrency
-		telemetryStore: nil,
-		pluginRegistry: nil,
+		profileLoader: loader,
+		sizeCalc:      sizecalc.NewSizeCalc(0),
 	}
-}
-
-// NewScannerWithSizeCalc creates a new scanner with a custom size calculator
-func NewScannerWithSizeCalc(loader *profiles.Loader, sizeCalc *sizecalc.SizeCalc) *Scanner {
-	return &Scanner{
-		profileLoader:  loader,
-		sizeCalc:       sizeCalc,
-		telemetryStore: nil,
-		pluginRegistry: nil,
-	}
-}
-
-// SetTelemetryStore sets the telemetry store for the scanner
-func (s *Scanner) SetTelemetryStore(store telemetry.TelemetryStore) {
-	s.telemetryStore = store
-}
-
-// SetPluginRegistry sets the plugin registry for the scanner
-func (s *Scanner) SetPluginRegistry(registry plugins.PluginRegistry) {
-	s.pluginRegistry = registry
 }
 
 // Scan performs a synchronous scan of the given paths
@@ -111,18 +81,6 @@ func (s *Scanner) Scan(ctx context.Context, paths []string, opts ScanOptions) ([
 		targets = append(targets, pathTargets...)
 	}
 
-	// Call plugin.Scan() for each registered plugin
-	if s.pluginRegistry != nil {
-		pluginTargets, err := s.scanPlugins(ctx)
-		if err != nil {
-			logger.Warn("Plugin scan failed: %v", err)
-			// Continue with core targets even if plugins fail
-		} else {
-			logger.Debug("Found %d targets from plugins", len(pluginTargets))
-			targets = append(targets, pluginTargets...)
-		}
-	}
-
 	// Calculate sizes for all targets
 	if len(targets) > 0 {
 		logger.Debug("Calculating sizes for %d targets", len(targets))
@@ -131,72 +89,17 @@ func (s *Scanner) Scan(ctx context.Context, paths []string, opts ScanOptions) ([
 			logger.Error("Failed to calculate sizes: %v", err)
 			return targets, fmt.Errorf("failed to calculate sizes: %w", err)
 		}
-
-		// Record scan event in telemetry
-		if s.telemetryStore != nil {
-			s.recordScanEvent(len(targets))
-		}
-
 		return targets, nil
 	}
 
 	logger.Debug("No targets found")
-
-	// Record scan event even if no targets found
-	if s.telemetryStore != nil {
-		s.recordScanEvent(0)
-	}
-
 	return targets, nil
-}
-
-// recordScanEvent records a scan event in telemetry
-func (s *Scanner) recordScanEvent(targetsFound int) {
-	event := telemetry.TelemetryEvent{
-		Type:      "scan",
-		Timestamp: time.Now(),
-		Data: map[string]interface{}{
-			"timestamp":     time.Now(),
-			"targets_found": targetsFound,
-		},
-	}
-
-	if err := s.telemetryStore.Record(event); err != nil {
-		logger.Warn("Failed to record scan telemetry: %v", err)
-	}
-}
-
-// scanPlugins calls Scan() on all registered plugins and merges results
-func (s *Scanner) scanPlugins(ctx context.Context) ([]types.Target, error) {
-	allPlugins := s.pluginRegistry.List()
-	if len(allPlugins) == 0 {
-		return []types.Target{}, nil
-	}
-
-	logger.Debug("Scanning with %d plugins", len(allPlugins))
-	allTargets := make([]types.Target, 0)
-
-	for _, plugin := range allPlugins {
-		logger.Debug("Calling plugin.Scan() for: %s", plugin.Name())
-
-		targets, err := plugin.Scan(ctx)
-		if err != nil {
-			logger.Warn("Plugin %s scan failed: %v", plugin.Name(), err)
-			// Continue with other plugins
-			continue
-		}
-
-		logger.Debug("Plugin %s found %d targets", plugin.Name(), len(targets))
-		allTargets = append(allTargets, targets...)
-	}
-
-	return allTargets, nil
 }
 
 // scanPath scans a single path recursively
 func (s *Scanner) scanPath(ctx context.Context, rootPath string, opts ScanOptions) ([]types.Target, error) {
 	targets := make([]types.Target, 0)
-	rootDepth := strings.Count(rootPath, string(os.PathSeparator))
+	rootDepth := pathDepth(rootPath)
 
 	// First, try to match the root directory itself
 	profile, err := s.profileLoader.MatchProfile(rootPath)
@@ -233,7 +136,7 @@ func (s *Scanner) scanPath(ctx context.Context, rootPath string, opts ScanOption
 
 		// Check depth limit
 		if opts.MaxDepth > 0 {
-			currentDepth := strings.Count(path, string(os.PathSeparator))
+			currentDepth := pathDepth(path)
 			if currentDepth-rootDepth > opts.MaxDepth {
 				if d.IsDir() {
 					return fs.SkipDir
@@ -355,4 +258,23 @@ func isHidden(name string) bool {
 func getLastAccessTime(info os.FileInfo) time.Time {
 	// Use ModTime as a fallback since access time is platform-specific
 	return info.ModTime()
+}
+
+// pathDepth returns the depth of a path by counting path components.
+// It cleans the path first to handle double separators and relative components.
+func pathDepth(path string) int {
+	cleanPath := filepath.Clean(path)
+	if cleanPath == string(os.PathSeparator) || cleanPath == "." {
+		return 0
+	}
+	// Split path into components
+	components := strings.Split(cleanPath, string(os.PathSeparator))
+	// Filter out empty components (from leading/trailing separators)
+	count := 0
+	for _, comp := range components {
+		if comp != "" && comp != "." {
+			count++
+		}
+	}
+	return count
 }

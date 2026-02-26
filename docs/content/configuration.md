@@ -20,7 +20,6 @@ The configuration file is located at `~/.rosiarc.json`. If it doesn't exist, Ros
   "ignore_paths": [],
   "plugins": [],
   "concurrency": 0,
-  "telemetry_enabled": false
 }
 ```
 
@@ -176,7 +175,6 @@ rosia config set concurrency 8
 - `16+` - For high-end systems with many cores
 - Lower values reduce CPU/memory usage but slow down operations
 
-### telemetry_enabled
 
 **Type:** `boolean`  
 **Default:** `false`  
@@ -184,14 +182,12 @@ rosia config set concurrency 8
 
 ```json
 {
-  "telemetry_enabled": true
 }
 ```
 
 Set via CLI:
 
 ```bash
-rosia config set telemetry_enabled true
 ```
 
 **What's Collected:**
@@ -225,7 +221,6 @@ Examples:
 ```bash
 rosia config set trash_retention_days 7
 rosia config set concurrency 8
-rosia config set telemetry_enabled true
 ```
 
 ### Reset to Defaults
@@ -481,7 +476,6 @@ For users who want fast cleaning with minimal safety:
   "trash_retention_days": 1,
   "profiles": ["node"],
   "concurrency": 16,
-  "telemetry_enabled": false
 }
 ```
 
@@ -499,7 +493,6 @@ For users who want maximum safety:
     "/Users/you/important-projects"
   ],
   "concurrency": 4,
-  "telemetry_enabled": false
 }
 ```
 
@@ -512,7 +505,6 @@ For users with large codebases:
   "trash_retention_days": 3,
   "profiles": ["node", "python", "rust"],
   "concurrency": 32,
-  "telemetry_enabled": true
 }
 ```
 
@@ -530,7 +522,6 @@ For teams with shared standards:
   ],
   "plugins": ["rosia-docker"],
   "concurrency": 0,
-  "telemetry_enabled": false
 }
 ```
 

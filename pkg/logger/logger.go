@@ -70,10 +70,7 @@ type Logger struct {
 }
 
 // defaultLogger is the global logger instance
-var (
-	defaultLogger *Logger
-	once          sync.Once
-)
+var defaultLogger *Logger
 
 // init initializes the default logger
 func init() {

@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 
 	"github.com/raucheacho/rosia-cli/pkg/types"
@@ -102,8 +101,14 @@ func (p *workerPool) worker(ctx context.Context, targetChan chan<- types.Target,
 			}
 		}
 
-		// Send targets to channel
+		// Send targets to channel with size calculation
 		for _, target := range targets {
+			// Calculate size for the target
+			size, calcErr := p.scanner.sizeCalc.Calculate(target.Path)
+			if calcErr == nil {
+				target.Size = size
+			}
+
 			select {
 			case targetChan <- target:
 			case <-ctx.Done():
@@ -116,7 +121,7 @@ func (p *workerPool) worker(ctx context.Context, targetChan chan<- types.Target,
 // scanPathAsync scans a single path and sends targets to the channel as they're found
 func (s *Scanner) scanPathAsync(ctx context.Context, rootPath string, opts ScanOptions, targetChan chan<- types.Target) ([]types.Target, error) {
 	targets := make([]types.Target, 0)
-	rootDepth := strings.Count(rootPath, string(os.PathSeparator))
+	rootDepth := pathDepth(rootPath)
 
 	// First, try to match the root directory itself
 	profile, err := s.profileLoader.MatchProfile(rootPath)
@@ -152,7 +157,7 @@ func (s *Scanner) scanPathAsync(ctx context.Context, rootPath string, opts ScanO
 
 		// Check depth limit
 		if opts.MaxDepth > 0 {
-			currentDepth := strings.Count(path, string(os.PathSeparator))
+			currentDepth := pathDepth(path)
 			if currentDepth-rootDepth > opts.MaxDepth {
 				if d.IsDir() {
 					return fs.SkipDir

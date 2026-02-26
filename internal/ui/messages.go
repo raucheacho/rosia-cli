@@ -19,10 +19,7 @@ type scanErrorMsg struct {
 }
 
 // cleanProgressMsg represents clean progress updates
-type cleanProgressMsg struct {
-	current int
-	total   int
-}
+type cleanProgressMsg struct{}
 
 // cleanCompleteMsg represents clean completion
 type cleanCompleteMsg struct {
