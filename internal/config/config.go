@@ -27,9 +27,6 @@ type Config struct {
 	TrashRetentionDays int      `json:"trash_retention_days"` // Days to keep items in trash
 	Profiles           []string `json:"profiles"`             // Enabled profiles (empty = all built-in)
 	IgnorePaths        []string `json:"ignore_paths"`         // Paths to exclude from scanning
-	Plugins            []string `json:"plugins"`              // Plugin paths
-	Concurrency        int      `json:"concurrency"`          // Number of workers (0 = auto)
-	TelemetryEnabled   bool     `json:"telemetry_enabled"`    // Enable telemetry
 }
 
 // Manager handles configuration loading and saving.
@@ -98,9 +95,6 @@ func (m *Manager) Load() (*Config, error) {
 	if config.IgnorePaths == nil {
 		config.IgnorePaths = defaults.IgnorePaths
 	}
-	if config.Plugins == nil {
-		config.Plugins = defaults.Plugins
-	}
 
 	return &config, nil
 }
@@ -131,9 +125,6 @@ func (m *Manager) GetDefault() *Config {
 		TrashRetentionDays: 3,
 		Profiles:           []string{"node", "python", "rust", "flutter", "go"},
 		IgnorePaths:        []string{},
-		Plugins:            []string{},
-		Concurrency:        0,
-		TelemetryEnabled:   true,
 	}
 }
 
