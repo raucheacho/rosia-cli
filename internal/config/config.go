@@ -74,6 +74,7 @@ func NewManagerWithPath(configPath string) *Manager {
 }
 
 // Load reads configuration from ~/.rosiarc.json
+// Missing fields are populated with default values
 func (m *Manager) Load() (*Config, error) {
 	data, err := os.ReadFile(m.configPath)
 	if err != nil {
@@ -87,6 +88,18 @@ func (m *Manager) Load() (*Config, error) {
 	var config Config
 	if err := json.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse config file %s: %w", m.configPath, err)
+	}
+
+	// Merge with defaults for nil slices
+	defaults := m.GetDefault()
+	if config.Profiles == nil {
+		config.Profiles = defaults.Profiles
+	}
+	if config.IgnorePaths == nil {
+		config.IgnorePaths = defaults.IgnorePaths
+	}
+	if config.Plugins == nil {
+		config.Plugins = defaults.Plugins
 	}
 
 	return &config, nil
