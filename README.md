@@ -59,7 +59,8 @@ rosia ui .
 | `rosia scan [paths...]` | Scan directories for cleanable targets |
 | `rosia clean [paths...]` | Clean detected targets |
 | `rosia ui [paths...]` | Launch interactive TUI |
-| `rosia restore --list` | List trashed items |
+| `rosia trash list` | List trashed items |
+| `rosia trash clean [--all]` | Clean old items from trash |
 | `rosia restore <id>` | Restore item from trash |
 | `rosia config show` | Show configuration |
 | `rosia config reset` | Reset configuration to defaults |
@@ -83,11 +84,17 @@ rosia clean . --yes --no-trash
 - `--yes, -y`: Skip confirmation
 - `--no-trash`: Delete permanently (not recommended)
 
-### Restore
+### Trash & Restore
 
 ```bash
 # List trashed items
-rosia restore --list
+rosia trash list
+
+# Clean old items (respects trash_retention_days)
+rosia trash clean
+
+# Clean all items immediately (permanent deletion)
+rosia trash clean --all
 
 # Restore specific item
 rosia restore 20250226_143022_node_modules
