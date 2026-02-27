@@ -55,7 +55,7 @@ brews:
   - name: rosia
     repository:
       owner: raucheacho
-      name: homebrew-rosia
+      name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
     homepage: https://github.com/raucheacho/rosia-cli
@@ -70,7 +70,7 @@ brews:
 scoops:
   - repository:
       owner: raucheacho
-      name: scoop-rosia
+      name: scoop-bucket
       token: "{{ .Env.SCOOP_BUCKET_GITHUB_TOKEN }}"
     homepage: https://github.com/raucheacho/rosia-cli
     description: "Clean development dependencies and caches"
