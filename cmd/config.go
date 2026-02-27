@@ -3,9 +3,11 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
+	"github.com/raucheacho/rosia-cli/pkg/logger"
 	"github.com/spf13/cobra"
 )
 
@@ -133,6 +135,17 @@ func runConfigShow(cmd *cobra.Command, args []string) error {
 	configPath := "~/.rosiarc.json"
 	if globalConfigManager != nil {
 		configPath = globalConfigManager.GetConfigPath()
+	}
+
+	// Check if config file exists, create it with defaults if not
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		if globalConfigManager != nil {
+			if err := globalConfigManager.Save(cfg); err != nil {
+				logger.Warn("Failed to create config file: %v", err)
+			} else {
+				fmt.Printf("Created configuration file: %s\n\n", configPath)
+			}
+		}
 	}
 
 	// Display configuration
