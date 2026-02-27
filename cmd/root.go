@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"github.com/raucheacho/rosia-cli/internal/config"
 	"github.com/raucheacho/rosia-cli/internal/profiles"
 	"github.com/raucheacho/rosia-cli/pkg/logger"
+	"github.com/raucheacho/rosia-cli/pkg/types"
 	"github.com/spf13/cobra"
 )
 
@@ -179,7 +181,7 @@ func initComponents() {
 
 // findProfilesDirectory locates the profiles directory
 func findProfilesDirectory() string {
-	// Try current directory first
+	// Try current directory first (development mode)
 	if _, err := os.Stat("profiles"); err == nil {
 		return "profiles"
 	}
@@ -194,17 +196,87 @@ func findProfilesDirectory() string {
 		}
 	}
 
-	// Try home directory
+	// Use home directory - initialize default profiles if needed
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
-		profilesDir := filepath.Join(homeDir, ".rosia", "profiles")
-		if _, err := os.Stat(profilesDir); err == nil {
-			return profilesDir
+		rosiaDir := filepath.Join(homeDir, ".rosia")
+		profilesFile := filepath.Join(rosiaDir, "profiles.json")
+		
+		// Create default profiles if file doesn't exist
+		if _, err := os.Stat(profilesFile); os.IsNotExist(err) {
+			if err := initDefaultProfiles(profilesFile); err != nil {
+				logger.Debug("Failed to create default profiles: %v", err)
+			}
 		}
+		return rosiaDir
 	}
 
-	// Default to current directory
+	// Fallback to current directory
 	return "profiles"
+}
+
+// initDefaultProfiles creates the default profiles.json file
+func initDefaultProfiles(profilesFile string) error {
+	// Ensure directory exists
+	dir := filepath.Dir(profilesFile)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create .rosia directory: %w", err)
+	}
+
+	defaultProfiles := []types.Profile{
+		{
+			Name:        "Node.js",
+			Version:     "1.0.0",
+			Patterns:    []string{"node_modules", "dist", "build", ".next", ".cache", "coverage"},
+			Detect:      []string{"package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"},
+			Description: "Cleans Node.js project artifacts",
+			Enabled:     true,
+		},
+		{
+			Name:        "Python",
+			Version:     "1.0.0",
+			Patterns:    []string{"venv", "__pycache__", ".pytest_cache", ".tox", ".mypy_cache", ".ruff_cache"},
+			Detect:      []string{"requirements.txt", "pyproject.toml", "setup.py", "Pipfile"},
+			Description: "Cleans Python virtual environments and caches",
+			Enabled:     true,
+		},
+		{
+			Name:        "Rust",
+			Version:     "1.0.0",
+			Patterns:    []string{"target"},
+			Detect:      []string{"Cargo.toml", "Cargo.lock"},
+			Description: "Cleans Rust build artifacts",
+			Enabled:     true,
+		},
+		{
+			Name:        "Go",
+			Version:     "1.0.0",
+			Patterns:    []string{"vendor", "bin"},
+			Detect:      []string{"go.mod", "go.sum"},
+			Description: "Cleans Go vendor and build directories",
+			Enabled:     true,
+		},
+		{
+			Name:        "Flutter",
+			Version:     "1.0.0",
+			Patterns:    []string{"build", ".dart_tool", ".flutter-plugins"},
+			Detect:      []string{"pubspec.yaml", "pubspec.lock"},
+			Description: "Cleans Flutter build artifacts",
+			Enabled:     true,
+		},
+	}
+
+	data, err := json.MarshalIndent(defaultProfiles, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal profiles: %w", err)
+	}
+
+	if err := os.WriteFile(profilesFile, data, 0644); err != nil {
+		return fmt.Errorf("failed to write profiles file: %w", err)
+	}
+
+	logger.Debug("Created default profiles at %s", profilesFile)
+	return nil
 }
 
 // GetGlobalConfig returns the global configuration

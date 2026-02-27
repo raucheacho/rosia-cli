@@ -44,19 +44,46 @@ func NewLoader() *Loader {
 	}
 }
 
-// LoadAll reads all JSON profiles from the specified directory
-func (l *Loader) LoadAll(dir string) ([]types.Profile, error) {
-	// Check if directory exists
-	if _, err := os.Stat(dir); err != nil {
+// init ensures matchCache is initialized (used after loading profiles)
+func (l *Loader) init() {
+	if l.matchCache == nil {
+		l.matchCache = make(map[string]*types.Profile)
+	}
+}
+
+// LoadAll reads profiles from the specified path.
+// It supports:
+// - A directory containing individual .json profile files
+// - A single profiles.json file containing an array of profiles
+func (l *Loader) LoadAll(path string) ([]types.Profile, error) {
+	info, err := os.Stat(path)
+	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, types.ErrPathNotFound{Path: dir}
+			return nil, types.ErrPathNotFound{Path: path}
 		}
 		if os.IsPermission(err) {
-			return nil, types.ErrPermissionDenied{Path: dir}
+			return nil, types.ErrPermissionDenied{Path: path}
 		}
-		return nil, fmt.Errorf("failed to access profiles directory %s: %w", dir, err)
+		return nil, fmt.Errorf("failed to access profiles path %s: %w", path, err)
 	}
 
+	// If path is a file, load it directly
+	if !info.IsDir() {
+		return l.loadProfilesFromFile(path)
+	}
+
+	// If it's a directory, check for profiles.json first
+	profilesFile := filepath.Join(path, "profiles.json")
+	if _, err := os.Stat(profilesFile); err == nil {
+		return l.loadProfilesFromFile(profilesFile)
+	}
+
+	// Otherwise, load all .json files from directory
+	return l.loadProfilesFromDir(path)
+}
+
+// loadProfilesFromDir loads profiles from individual JSON files in a directory
+func (l *Loader) loadProfilesFromDir(dir string) ([]types.Profile, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsPermission(err) {
@@ -87,16 +114,60 @@ func (l *Loader) LoadAll(dir string) ([]types.Profile, error) {
 		profiles = append(profiles, *profile)
 	}
 
+	l.setProfiles(profiles)
+	return profiles, nil
+}
+
+// loadProfilesFromFile loads profiles from a single JSON file (supports array or single object)
+func (l *Loader) loadProfilesFromFile(path string) ([]types.Profile, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, types.ErrPathNotFound{Path: path}
+		}
+		if os.IsPermission(err) {
+			return nil, types.ErrPermissionDenied{Path: path}
+		}
+		return nil, fmt.Errorf("failed to read profiles file %s: %w", path, err)
+	}
+
+	// Try to unmarshal as array first
+	var profiles []types.Profile
+	if err := json.Unmarshal(data, &profiles); err != nil {
+		// Try to unmarshal as single profile object
+		var singleProfile types.Profile
+		if err := json.Unmarshal(data, &singleProfile); err != nil {
+			return nil, fmt.Errorf("failed to parse profiles file %s: %w", path, err)
+		}
+		profiles = []types.Profile{singleProfile}
+	}
+
+	// Validate all profiles
+	validProfiles := make([]types.Profile, 0, len(profiles))
+	for i := range profiles {
+		if err := l.validateProfile(&profiles[i]); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: profile validation failed for %s: %v\n", profiles[i].Name, err)
+			continue
+		}
+		validProfiles = append(validProfiles, profiles[i])
+	}
+
+	l.setProfiles(validProfiles)
+	return validProfiles, nil
+}
+
+// setProfiles updates the loader's profiles and rebuilds the cache
+func (l *Loader) setProfiles(profiles []types.Profile) {
 	l.profiles = profiles
+	l.init()
 
 	// Build profile cache
 	l.cacheMutex.Lock()
+	l.profileCache = make(map[string]*types.Profile)
 	for i := range l.profiles {
 		l.profileCache[l.profiles[i].Name] = &l.profiles[i]
 	}
 	l.cacheMutex.Unlock()
-
-	return profiles, nil
 }
 
 // LoadProfile loads a single profile from a JSON file
