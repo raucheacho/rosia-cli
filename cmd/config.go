@@ -49,9 +49,6 @@ Shows all configuration values in JSON format, including:
   • trash_retention_days: Days to keep items in trash
   • profiles: Enabled technology profiles
   • ignore_paths: Paths excluded from scanning
-  • plugins: Enabled plugin names
-  • concurrency: Worker pool size (0 = auto-detect)
-  • telemetry_enabled: Anonymous statistics collection
 
 Examples:
   # Display configuration
@@ -67,21 +64,12 @@ var configSetCmd = &cobra.Command{
 
 Available Configuration Keys:
   trash_retention_days  Number of days to retain trashed items (integer > 0)
-  concurrency           Number of concurrent operations (integer >= 0, 0 = auto)
-  telemetry_enabled     Enable anonymous telemetry (true/false)
   profiles              Comma-separated list of enabled profiles
   ignore_paths          Comma-separated list of paths to ignore
-  plugins               Comma-separated list of enabled plugins
 
 Examples:
   # Set trash retention to 7 days
   rosia config set trash_retention_days 7
-
-  # Set concurrency to 4 workers
-  rosia config set concurrency 4
-
-  # Enable telemetry
-  rosia config set telemetry_enabled true
 
   # Set enabled profiles
   rosia config set profiles "node,python,rust"
@@ -90,8 +78,6 @@ Examples:
   rosia config set ignore_paths "/tmp,/var"
 
 Tips:
-  • Use 0 for concurrency to auto-detect based on CPU cores
-  • Telemetry is disabled by default and stored locally
   • Changes take effect immediately`,
 	Args: cobra.ExactArgs(2),
 	RunE: runConfigSet,
@@ -107,9 +93,6 @@ This command overwrites ~/.rosiarc.json with default settings:
   • trash_retention_days: 3
   • profiles: ["node", "python", "rust", "flutter", "go"]
   • ignore_paths: []
-  • plugins: []
-  • concurrency: 0 (auto-detect)
-  • telemetry_enabled: false
 
 Examples:
   # Reset configuration

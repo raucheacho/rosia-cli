@@ -105,9 +105,7 @@ Created automatically on first run with sensible defaults.
 {
   "trash_retention_days": 3,
   "profiles": ["node", "python", "rust", "flutter", "go"],
-  "ignore_paths": [],
-  "concurrency": 0,
-  "telemetry_enabled": false
+  "ignore_paths": []
 }
 ```
 
@@ -116,8 +114,6 @@ Created automatically on first run with sensible defaults.
 | `trash_retention_days` | 3 | Days to keep items in trash |
 | `profiles` | all | Enabled technology profiles |
 | `ignore_paths` | [] | Paths to exclude from scanning |
-| `concurrency` | 0 | Worker count (0 = auto) |
-| `telemetry_enabled` | false | Anonymous usage stats |
 
 ### Profiles File
 
