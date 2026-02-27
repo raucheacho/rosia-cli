@@ -19,14 +19,13 @@ Rosia is a fast command-line tool that helps developers reclaim disk space by cl
 ### Homebrew (macOS/Linux)
 
 ```bash
-brew tap raucheacho/rosia
-brew install rosia
+brew install raucheacho/tap/rosia
 ```
 
 ### Scoop (Windows)
 
 ```powershell
-scoop bucket add rosia https://github.com/raucheacho/scoop-rosia
+scoop bucket add raucheacho https://github.com/raucheacho/scoop-bucket
 scoop install rosia
 ```
 
@@ -57,14 +56,14 @@ rosia ui .
 
 ### Commands
 
-| Command | Description |
-|---------|-------------|
-| `rosia scan [paths...]` | Scan directories for cleanable targets |
-| `rosia clean [paths...]` | Clean detected targets |
-| `rosia ui [path]` | Launch interactive TUI |
-| `rosia restore <id>` | Restore from trash |
-| `rosia config` | Manage configuration |
-| `rosia version` | Display version |
+| Command                  | Description                            |
+| ------------------------ | -------------------------------------- |
+| `rosia scan [paths...]`  | Scan directories for cleanable targets |
+| `rosia clean [paths...]` | Clean detected targets                 |
+| `rosia ui [path]`        | Launch interactive TUI                 |
+| `rosia restore <id>`     | Restore from trash                     |
+| `rosia config`           | Manage configuration                   |
+| `rosia version`          | Display version                        |
 
 ### Scan Options
 
@@ -105,10 +104,10 @@ Config file: `~/.rosiarc.json`
 }
 ```
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `trash_retention_days` | 3 | Days to keep items in trash |
-| `ignore_paths` | [] | Paths to exclude from scanning |
+| Option                 | Default | Description                    |
+| ---------------------- | ------- | ------------------------------ |
+| `trash_retention_days` | 3       | Days to keep items in trash    |
+| `ignore_paths`         | []      | Paths to exclude from scanning |
 
 ## Supported Technologies
 
